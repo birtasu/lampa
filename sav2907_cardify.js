@@ -1296,7 +1296,43 @@
 			}
 		});
 
+		// Примусово показуємо всі реакції завжди, незалежно від фокусу
+		$("body").append(`
+		    <style>
+		        /* Скасовуємо приховування дочірніх елементів при відсутності фокусу */
+		        .full-start-new__reactions > div:not(:first-child),
+		        .full-start-new__reactions .reaction,
+		        .full-start-new__reactions .reaction__count {
+		            display: inline-block !important;
+		            visibility: visible !important;
+		        }
 		
+		        /* Повністю ігноруємо правило :not(.focus) */
+		        .full-start-new__reactions:not(.focus) > div:not(:first-child),
+		        .full-start-new__reactions:not(.focus) .reaction,
+		        .full-start-new__reactions:not(.focus) .reaction__count {
+		            display: inline-block !important;
+		            visibility: visible !important;
+		        }
+		
+		        /* Робимо блок реакцій нормальним flex або inline для гарного вигляду */
+		        .full-start-new__reactions {
+		            display: flex !important;
+		            flex-wrap: wrap !important;
+		            align-items: center !important;
+		            gap: 0.6em !important;
+		            margin-top: 0.5em !important;
+		            margin-bottom: 1em !important;
+		        }
+		
+		        /* Якщо потрібно — прибираємо позиціонування лічильника */
+		        .full-start-new__reactions .reaction__count {
+		            position: static !important;
+		            font-size: 0.9em !important;
+		            margin-left: 0.3em !important;
+		        }
+		    </style>
+		`);
 
 	}
 
@@ -1308,5 +1344,6 @@
 	}
 
 })();
+
 
 
