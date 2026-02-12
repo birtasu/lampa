@@ -1334,6 +1334,34 @@
 		    </style>
 		`);
 
+
+		Lampa.Listener.follow("full", function(e) {
+    if (e.type !== "start") return;
+
+    var render = e.object.activity.render();
+    var body   = render.find('.full-start-new__body');
+    var right  = render.find('.full-start-new__right');
+    var left   = render.find('.full-start-new__left');
+
+    if (body.length && right.length) {
+        // Піднімаємо весь правий блок (з назвою + реакціями + рейтингом + деталями + кнопками) вище
+        right.prependTo(body);
+        
+        // Додаткове стилювання для нормального вигляду
+        right.css({
+            'order': '-1',
+            'margin-bottom': '1.5em',
+            'width': '100%'
+        });
+
+        // Якщо потрібно — постер нижче
+        left.css({
+            'margin-top': '1em'
+        });
+    }
+});
+		
+
 	}
 
 	if (Follow.go) startPlugin();
@@ -1344,6 +1372,7 @@
 	}
 
 })();
+
 
 
 
