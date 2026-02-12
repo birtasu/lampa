@@ -1281,11 +1281,12 @@
 				if (!reacts.hasClass("moved-after-title")) {
 					reacts.insertAfter(title);
 					reacts.addClass("moved-after-title");
+					reacts.addClass("focus");
 
 					// Додаткове стилювання (можна налаштувати під себе)
 					reacts.css({
 						"margin-top": "0.4em",
-						"margin-bottom": "1em",
+						"margin-bottom": "1.2em",
 						"margin-left": "0",
 						"margin-right": "auto",
 						"font-size": "1.05em",
@@ -1303,4 +1304,5 @@
 			if (Type.re(e)) startPlugin();
 		});
 	}
+
 })();
