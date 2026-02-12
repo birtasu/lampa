@@ -1296,70 +1296,90 @@
 			}
 		});
 
-		// Примусово показуємо всі реакції завжди, незалежно від фокусу
-		$("body").append(`
-		    <style>
-		        /* Скасовуємо приховування дочірніх елементів при відсутності фокусу */
-		        .full-start-new__reactions > div:not(:first-child),
-		        .full-start-new__reactions .reaction,
-		        .full-start-new__reactions .reaction__count {
-		            display: inline-block !important;
-		            visibility: visible !important;
-		        }
 		
-		        /* Повністю ігноруємо правило :not(.focus) */
-		        .full-start-new__reactions:not(.focus) > div:not(:first-child),
-		        .full-start-new__reactions:not(.focus) .reaction,
-		        .full-start-new__reactions:not(.focus) .reaction__count {
-		            display: inline-block !important;
-		            visibility: visible !important;
-		        }
-		
-		        /* Робимо блок реакцій нормальним flex або inline для гарного вигляду */
-		        .full-start-new__reactions {
-		            display: flex !important;
-		            flex-wrap: wrap !important;
-		            align-items: center !important;
-		            gap: 0.6em !important;
-		            margin-top: 0.5em !important;
-		            margin-bottom: 1em !important;
-		        }
-		
-		        /* Якщо потрібно — прибираємо позиціонування лічильника */
-		        .full-start-new__reactions .reaction__count {
-		            position: static !important;
-		            font-size: 0.9em !important;
-		            margin-left: 0.3em !important;
-		        }
-		    </style>
-		`);
 
 
-		Lampa.Listener.follow("full", function(e) {
+// Піднімаємо блок з назвою фільму та всім вмістом після нього ВИЩЕ
+Lampa.Listener.follow("full", function(e) {
     if (e.type !== "start") return;
 
     var render = e.object.activity.render();
     var body   = render.find('.full-start-new__body');
-    var right  = render.find('.full-start-new__right');
-    var left   = render.find('.full-start-new__left');
+    var right  = render.find('.full-start-new__right');     // весь правий блок (назва + реакції + рейтинг + деталі + кнопки)
+    var left   = render.find('.full-start-new__left');      // постер
 
-    if (body.length && right.length) {
-        // Піднімаємо весь правий блок (з назвою + реакціями + рейтингом + деталями + кнопками) вище
+    if (body.length && right.length && left.length) {
+        // 1. Переміщуємо правий блок на початок body (піднімаємо вище)
         right.prependTo(body);
-        
-        // Додаткове стилювання для нормального вигляду
+
+        // 2. Додаємо клас для стилів (щоб не конфліктувало з оригінальними)
+        right.addClass('moved-up');
+
+        // 3. Опціонально: постер нижче, з відступом зверху
+        left.addClass('moved-down');
+
+        // 4. Примусово застосовуємо стилі (можна налаштувати значення)
         right.css({
-            'order': '-1',
-            'margin-bottom': '1.5em',
-            'width': '100%'
+            'order': '-1',               // flex-порядок: вище за всіх
+            'margin-bottom': '2em',      // відступ знизу перед постером
+            'width': '100%',             // повна ширина
+            'max-width': 'none'          // знімаємо обмеження, якщо було
         });
 
-        // Якщо потрібно — постер нижче
         left.css({
-            'margin-top': '1em'
+            'margin-top': '1.5em',       // відступ зверху після правого блоку
+            'order': '1'
+        });
+
+        // 5. Робимо body вертикальним стеком (на мобільних/телевізорах це виглядає природно)
+        body.css({
+            'flex-direction': 'column',
+            'align-items': 'flex-start'
         });
     }
 });
+
+
+		// Додаткові стилі для піднятого блоку
+$("body").append(`
+    <style>
+        .full-start-new__body.moved-up {
+            flex-direction: column !important;
+            gap: 1.2em !important;
+        }
+
+        .full-start-new__right.moved-up {
+            order: -1 !important;
+            margin-bottom: 2em !important;
+            padding-bottom: 1em !important;
+            border-bottom: 1px solid rgba(255,255,255,0.15) !important; /* опціональна лінія-розділювач */
+        }
+
+        .full-start-new__left.moved-down {
+            margin-top: 1.5em !important;
+            align-self: center !important; /* центруем постер, якщо хочеш */
+        }
+
+        /* Якщо на TV екран великий — можна повернути рядкове розміщення */
+        @media (min-width: 1200px) {
+            .full-start-new__body {
+                flex-direction: row !important;
+                flex-wrap: wrap !important;
+            }
+            .full-start-new__right.moved-up {
+                flex: 1 1 100% !important;
+                order: -1 !important;
+            }
+            .full-start-new__left.moved-down {
+                flex: 0 0 auto !important;
+                order: 1 !important;
+                margin-top: 0 !important;
+            }
+        }
+    </style>
+`);
+		
+	
 		
 
 	}
@@ -1372,6 +1392,7 @@
 	}
 
 })();
+
 
 
 
