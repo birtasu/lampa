@@ -1,30 +1,78 @@
 /**
- * Lampa: Enhanced Ratings (повністю стабільна версія для 3.1.6)
- * Додає RT, Metacritic, IMDb з кольорами та голосами
+ * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges
+ * Стабільна версія для Lampa 3.1.6 — без backtick, працює
  */
 
 (function() {
   'use strict';
 
-  console.log('[RTG] Плагін завантажився - фінальна стабільна версія');
+  console.log('[RTG] Плагін завантажився');
 
-  // Стилі
-  var styles = '<style>' +
-    ':root{--lmp-h-imdb:22px;--lmp-h-rt:24px;--lmp-h-mc:22px;}' +
+  var pluginStyles = '<style>' +
+    '.loading-dots-container{display:flex;align-items:center;font-size:0.85em;color:#ccc;padding:0.6em 1em;border-radius:0.5em;}' +
+    '.loading-dots__text{margin-right:1em;}' +
+    '.loading-dots__dot{width:0.5em;height:0.5em;border-radius:50%;background:currentColor;animation:loading-dots-bounce 1.4s infinite ease-in-out both;}' +
+    '.loading-dots__dot:nth-child(1){animation-delay:-0.32s;}' +
+    '.loading-dots__dot:nth-child(2){animation-delay:-0.16s;}' +
+    '@keyframes loading-dots-bounce{0%,80%,100%{transform:translateY(0);opacity:0.6}40%{transform:translateY(-0.5em);opacity:1}}' +
+    ':root{--lmp-h-imdb:22px;--lmp-h-mc:22px;--lmp-h-rt:24px;--lmp-h-popcorn:24px;--lmp-h-tmdb:24px;--lmp-h-awards:18px;--lmp-h-avg:18px;--lmp-h-oscar:20px;--lmp-h-emmy:22px;}' +
+    '.rate--oscars,.rate--emmy,.rate--awards,.rate--gold{color:gold}' +
+    'body.lmp-enh--mono .rate--oscars,body.lmp-enh--mono .rate--emmy,body.lmp-enh--mono .rate--awards,body.lmp-enh--mono .rate--gold,body.lmp-enh--mono .rating--green,body.lmp-enh--mono .rating--blue,body.lmp-enh--mono .rating--orange,body.lmp-enh--mono .rating--red,body.lmp-enh--mono .full-start__rate{color:inherit!important}' +
     'body:not(.lmp-enh--mono) .full-start__rate.rating--green{color:#2ecc71}' +
     'body:not(.lmp-enh--mono) .full-start__rate.rating--blue{color:#60a5fa}' +
     'body:not(.lmp-enh--mono) .full-start__rate.rating--orange{color:#f59e0b}' +
     'body:not(.lmp-enh--mono) .full-start__rate.rating--red{color:#ef4444}' +
-    '.full-start__rate{margin:0 0.3em 0.3em 0;padding:0.4em 0.6em;border-radius:0.3em;background:rgba(0,0,0,0.3);display:inline-flex;align-items:center;}' +
-    '.full-start__rate:last-child{margin-right:0;}' +
-    '.rate--imdb .source--name img,.rate--rt .source--name img,.rate--mc .source--name img{height:22px;display:inline-block;vertical-align:middle;margin-left:0.4em;}' +
+    '.full-start-new__rate-line .full-start__rate{margin-right:0.3em!important}' +
+    '.full-start-new__rate-line .full-start__rate:last-child{margin-right:0!important}' +
+    '.full-start-new__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader),.full-start__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader){opacity:0!important;pointer-events:none!important;transition:opacity 0.15s}' +
+    '.lmp-award-icon{display:inline-flex;align-items:center;justify-content:center;line-height:1;height:auto;width:auto;flex-shrink:0}' +
+    '.lmp-award-icon img{height:auto;width:auto;display:block;object-fit:contain}' +
+    '.lmp-award-icon--oscar img{height:var(--lmp-h-oscar)}' +
+    '.lmp-award-icon--emmy img{height:var(--lmp-h-emmy)}' +
+    '.rate--imdb .source--name img{height:var(--lmp-h-imdb)}' +
+    '.rate--mc .source--name img{height:var(--lmp-h-mc)}' +
+    '.rate--rt .source--name img{height:var(--lmp-h-rt)}' +
+    '.rate--popcorn .source--name img{height:var(--lmp-h-popcorn)}' +
+    '.rate--tmdb .source--name img{height:var(--lmp-h-tmdb)}' +
+    '.rate--awards .source--name img{height:var(--lmp-h-awards)}' +
+    '.rate--avg .source--name img{height:var(--lmp-h-avg)}' +
+    '.full-start__rate .source--name{display:inline-flex;align-items:center;justify-content:center}' +
+    '.settings-param__descr,.settings-param__subtitle{white-space:pre-line}' +
+    '@media (max-width:600px){.full-start-new__rate-line{flex-wrap:wrap}.full-start__rate{margin-right:.25em!important;margin-bottom:.25em;font-size:16px;min-width:unset}:root{--lmp-h-imdb:14px;--lmp-h-mc:14px;--lmp-h-rt:16px;--lmp-h-popcorn:16px;--lmp-h-tmdb:16px;--lmp-h-awards:14px;--lmp-h-avg:14px;--lmp-h-oscar:14px;--lmp-h-emmy:16px}.loading-dots-container{font-size:.8em;padding:.4em .8em}.lmp-award-icon{height:16px}}' +
+    '@media (max-width:360px){.full-start__rate{font-size:14px}:root{--lmp-h-imdb:12px;--lmp-h-mc:12px;--lmp-h-rt:14px;--lmp-h-popcorn:14px;--lmp-h-tmdb:14px;--lmp-h-awards:12px;--lmp-h-avg:12px;--lmp-h-oscar:12px;--lmp-h-emmy:14px}.lmp-award-icon{height:12px}}' +
+    'body.lmp-enh--rate-border .full-start__rate{border:1px solid rgba(255,255,255,0.45);border-radius:0.3em;box-sizing:border-box}' +
+    'body.lmp-enh--rate-border .full-start-new__rate-line,body.lmp-enh--rate-border .full-start__rate-line{flex-wrap:wrap;gap:0.3em}' +
   '</style>';
 
-  Lampa.Template.add('rtg_styles', styles);
-  $('body').append(Lampa.Template.get('rtg_styles', {}, true));
+  Lampa.Template.add('lmp_enh_styles', pluginStyles);
+  $('body').append(Lampa.Template.get('lmp_enh_styles', {}, true));
 
-  // Кольори за джерелом
-  function getColorClass(source, value, extra) {
+  // Константи
+  var LMP_ENH_CONFIG = {apiKeys:{mdblist:'',omdb:''},monochromeIcons:false};
+  var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/';
+  var ICONS = {
+    imdb: BASE_ICON + 'imdb.png',
+    rotten_good: BASE_ICON + 'RottenTomatoes.png',
+    rotten_bad: BASE_ICON + 'RottenBad.png',
+    metascore: BASE_ICON + 'metascore.png'
+  };
+
+  var RCFG_DEFAULT = {
+    ratings_color_by_source: true,
+    ratings_enable_imdb: true,
+    ratings_enable_rt: true,
+    ratings_enable_mc: true
+  };
+    function getCfg() {
+    return {
+      ratings_color_by_source: Lampa.Storage.get('ratings_color_by_source', true),
+      ratings_enable_imdb: Lampa.Storage.get('ratings_enable_imdb', true),
+      ratings_enable_rt: Lampa.Storage.get('ratings_enable_rt', true),
+      ratings_enable_mc: Lampa.Storage.get('ratings_enable_mc', true)
+    };
+  }
+
+  function getSourceColorClass(source, value, extra) {
     var v = parseFloat(value);
     if (isNaN(v)) return '';
     source = source.toLowerCase();
@@ -47,91 +95,195 @@
     return '';
   }
 
-  // Формат чисел
   function formatNumber(n) {
     if (!n || isNaN(n)) return '?';
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
     return n;
   }
-
-  // Додавання рейтингів
-  function addRatings() {
-    console.log('[RTG] Спроба додати рейтинги');
-
+    function insertRatings(data) {
     var render = Lampa.Activity.active().activity.render();
-    if (!render) {
-      console.log('[RTG] Render не знайдено');
+    if (!render) return;
+
+    var rateLine = $('.full-start-new__rate-line, .full-start__rate-line', render).first();
+    if (!rateLine.length) return;
+
+    var cfg = getCfg();
+
+    // IMDb
+    if (cfg.ratings_enable_imdb && data.imdb_display) {
+      var text = data.imdb_display;
+      var extra = data.imdb_votes ? ' (' + formatNumber(data.imdb_votes) + ')' : '';
+      var cont = $('.rate--imdb', rateLine);
+      if (cont.length === 0) {
+        cont = $('<div class="full-start__rate rate--imdb"><div>' + text + extra + '</div><div class="source--name"><img src="' + ICONS.imdb + '" alt="IMDb"></div></div>');
+        rateLine.append(cont);
+      } else {
+        cont.find('> div:first').text(text + extra);
+      }
+      cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) cont.addClass(getSourceColorClass('imdb', data.imdb_display));
+    }
+
+    // Rotten Tomatoes
+    if (cfg.ratings_enable_rt && data.rt_display) {
+      var text = data.rt_display + '%';
+      var extra = data.rt_audience_score ? ' | ' + data.rt_audience_score + '% (' + formatNumber(data.rt_audience_count || '?') + ')' : '';
+      var cont = $('.rate--rt', rateLine);
+      if (cont.length === 0) {
+        var icon = data.rt_fresh ? ICONS.rotten_good : ICONS.rotten_bad;
+        cont = $('<div class="full-start__rate rate--rt"><div>' + text + extra + '</div><div class="source--name"><img src="' + icon + '" alt="RT"></div></div>');
+        rateLine.append(cont);
+      } else {
+        cont.find('> div:first').text(text + extra);
+      }
+      cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) cont.addClass(getSourceColorClass('rt', data.rt_display, {fresh: data.rt_fresh}));
+    }
+
+    // Metacritic
+    if (cfg.ratings_enable_mc && data.mc_display) {
+      var text = data.mc_display;
+      var extra = '';
+      if (data.mc_critic_count) extra = ' (' + formatNumber(data.mc_critic_count) + ' критик)';
+      else if (data.mc_user_count) extra = ' (' + formatNumber(data.mc_user_count) + ' глядач)';
+      var cont = $('.rate--mc', rateLine);
+      if (cont.length === 0) {
+        cont = $('<div class="full-start__rate rate--mc"><div>' + text + extra + '</div><div class="source--name"><img src="' + BASE_ICON + 'metascore.png" alt="MC"></div></div>');
+        rateLine.append(cont);
+      } else {
+        cont.find('> div:first').text(text + extra);
+      }
+      cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) cont.addClass(getSourceColorClass('metacritic', data.mc_display));
+    }
+
+    console.log('[RTG] Рейтинги оновлено');
+  }
+    // fetchMdbListRatings (якщо хочеш реальні дані, а не статичні)
+  function fetchMdbListRatings(card, callback) {
+    var key = LMP_ENH_CONFIG.apiKeys.mdblist;
+    if (!key) {
+      console.log('[RTG] Ключ MDBList відсутній');
+      callback(null);
       return;
     }
 
-    // Шукаємо будь-який контейнер рейтингів
-    var rateContainer = $('.full-start-new__rate-line, .full-start__rate-line, .full-start__rate', render).first();
-    if (!rateContainer.length) {
-      console.log('[RTG] Контейнер рейтингів не знайдено');
-      // Якщо не знайшли — додаємо новий контейнер
-      rateContainer = $('<div class="full-start__rate-line" style="display:flex;flex-wrap:wrap;margin:0.5em 0;"></div>');
-      $('.full-start__title, .full-start-new__title', render).first().after(rateContainer);
-    }
+    var typeSegment = (card.type === 'tv') ? 'show' : card.type;
+    var url = 'https://api.mdblist.com/tmdb/' + typeSegment + '/' + card.id + '?apikey=' + encodeURIComponent(key);
 
-    // Дані (поки статичні, потім замінимо на API)
-    var imdb = { display: '8.0', votes: 1500000 };
-    var rt = { display: '92', fresh: true, audience: '88', audience_count: 45000 };
-    var mc = { display: '78', critic_count: 120 };
+    new Lampa.Reguest().silent(url, function(response) {
+      if (!response || !response.ratings || !Array.isArray(response.ratings)) {
+        console.log('[RTG] MDBList: дані не знайдено');
+        callback(null);
+        return;
+      }
 
-    // IMDb
-    var imdbDiv = rateContainer.find('.rate--imdb');
-    if (imdbDiv.length === 0) {
-      imdbDiv = $('<div class="full-start__rate rate--imdb">' +
-        '<div>' + imdb.display + ' (' + formatNumber(imdb.votes) + ')</div>' +
-        '<div class="source--name"><img src="' + BASE_ICON + 'imdb.png" alt="IMDb"></div>' +
-      '</div>');
-      rateContainer.append(imdbDiv);
-    } else {
-      imdbDiv.find('> div:first').text(imdb.display + ' (' + formatNumber(imdb.votes) + ')');
-    }
-    imdbDiv.removeClass('rating--green rating--blue rating--orange rating--red');
-    imdbDiv.addClass(getColorClass('imdb', imdb.display));
+      var res = {
+        imdb_display: null, imdb_for_avg: null, imdb_votes: null,
+        rt_display: null, rt_for_avg: null, rt_fresh: null,
+        rt_audience_score: null, rt_audience_count: null,
+        mc_display: null, mc_for_avg: null, mc_critic_count: null, mc_user_count: null
+      };
 
-    // Rotten Tomatoes
-    var rtDiv = rateContainer.find('.rate--rt');
-    if (rtDiv.length === 0) {
-      var rtIcon = rt.fresh ? 'RottenTomatoes.png' : 'RottenBad.png';
-      rtDiv = $('<div class="full-start__rate rate--rt">' +
-        '<div>' + rt.display + '% | ' + rt.audience + '% (' + formatNumber(rt.audience_count) + ')</div>' +
-        '<div class="source--name"><img src="' + BASE_ICON + rtIcon + '" alt="RT"></div>' +
-      '</div>');
-      rateContainer.append(rtDiv);
-    } else {
-      rtDiv.find('> div:first').text(rt.display + '% | ' + rt.audience + '% (' + formatNumber(rt.audience_count) + ')');
-    }
-    rtDiv.removeClass('rating--green rating--blue rating--orange rating--red');
-    rtDiv.addClass(getColorClass('rt', rt.display, {fresh: rt.fresh}));
+      response.ratings.forEach(function(r) {
+        var src = (r.source || '').toLowerCase();
+        var val = parseFloat(r.value || r.score || r.percent || r.rating);
+        if (isNaN(val)) return;
 
-    // Metacritic
-    var mcDiv = rateContainer.find('.rate--mc');
-    if (mcDiv.length === 0) {
-      mcDiv = $('<div class="full-start__rate rate--mc">' +
-        '<div>' + mc.display + ' (' + formatNumber(mc.critic_count) + ' критик)</div>' +
-        '<div class="source--name"><img src="' + BASE_ICON + 'metascore.png" alt="MC"></div>' +
-      '</div>');
-      rateContainer.append(mcDiv);
-    } else {
-      mcDiv.find('> div:first').text(mc.display + ' (' + formatNumber(mc.critic_count) + ' критик)');
-    }
-    mcDiv.removeClass('rating--green rating--blue rating--orange rating--red');
-    mcDiv.addClass(getColorClass('metacritic', mc.display));
+        if (src.includes('imdb')) {
+          var i = val > 10 ? val / 10 : val;
+          res.imdb_display = i.toFixed(1);
+          res.imdb_for_avg = i;
+          if (r.votes) res.imdb_votes = r.votes;
+        }
+        if (src.includes('rotten') || src.includes('tomato')) {
+          res.rt_display = Math.round(val).toString();
+          res.rt_for_avg = val / 10;
+          res.rt_fresh = val >= 60;
+          if (r.audience_score) res.rt_audience_score = Math.round(r.audience_score);
+          if (r.audience_votes || r.audience_count) res.rt_audience_count = r.audience_votes || r.audience_count;
+        }
+        if (src.includes('metacritic')) {
+          var m = val > 10 ? val / 10 : val;
+          if (src.includes('user')) {
+            res.mc_display = m.toFixed(1);
+            res.mc_for_avg = m;
+            if (r.reviews || r.votes) res.mc_user_count = r.reviews || r.votes;
+          } else {
+            res.mc_display = m.toFixed(1);
+            res.mc_for_avg = m;
+            if (r.reviews || r.votes) res.mc_critic_count = r.reviews || r.votes;
+          }
+        }
+      });
 
-    console.log('[RTG] Рейтинги додано');
+      callback(res);
+    }, function() {
+      console.log('[RTG] Помилка MDBList');
+      callback(null);
+    });
   }
 
-  // Запуск при відкритті деталів
+  // fetchOmdbRatings (якщо потрібен вік, нагороди тощо)
+  function fetchOmdbRatings(card, callback) {
+    var key = LMP_ENH_CONFIG.apiKeys.omdb;
+    if (!key || !card.imdb_id) {
+      console.log('[RTG] Ключ OMDb або IMDb ID відсутній');
+      callback(null);
+      return;
+    }
+
+    var typeParam = card.type === 'tv' ? '&type=series' : '';
+    var url = 'https://www.omdbapi.com/?apikey=' + encodeURIComponent(key) +
+      '&i=' + encodeURIComponent(card.imdb_id) + typeParam;
+
+    new Lampa.Reguest().silent(url, function(data) {
+      if (!data || data.Response !== 'True') {
+        console.log('[RTG] OMDb: дані не знайдено');
+        callback(null);
+        return;
+      }
+
+      var awardsParsed = parseAwards(data.Awards || '');
+      var rtScore = null, mcScore = null;
+
+      if (Array.isArray(data.Ratings)) {
+        data.Ratings.forEach(function(r) {
+          if (r.Source === 'Rotten Tomatoes') rtScore = parseInt((r.Value || '').replace('%', '')) || null;
+          if (r.Source === 'Metacritic') mcScore = parseInt((r.Value || '').split('/')[0]) || null;
+        });
+      }
+
+      var res = {
+        imdb_display: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating).toFixed(1) : null,
+        imdb_for_avg: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
+        imdb_votes: data.imdbVotes !== 'N/A' ? parseInt(data.imdbVotes.replace(/,/g, '')) : null,
+        mc_critic_display: mcScore ? (mcScore / 10).toFixed(1) : null,
+        mc_critic_for_avg: mcScore ? (mcScore / 10) : null,
+        rt_display: rtScore ? rtScore.toString() : null,
+        rt_for_avg: rtScore ? rtScore / 10 : null,
+        rt_fresh: rtScore ? rtScore >= 60 : null,
+        ageRating: data.Rated !== 'N/A' ? data.Rated : null,
+        oscars: awardsParsed.oscars,
+        emmy: awardsParsed.emmy,
+        awards: awardsParsed.awards
+      };
+
+      callback(res);
+    }, function() {
+      console.log('[RTG] Помилка OMDb');
+      callback(null);
+    });
+  }
+    // Запуск плагіну
   Lampa.Listener.follow('full', function(e) {
     if (e.type === 'complite') {
-      console.log('[RTG] Деталі відкрито');
-      setTimeout(addRatings, 500); // даємо час на завантаження DOM
+      console.log('[RTG] Деталі фільму відкрито');
+      addRatings();
     }
   });
 
   console.log('[RTG] Слухач встановлено');
+
 })();
