@@ -39,12 +39,13 @@
 
     function createBlock(className, iconUrl, value, color) {
         var size = getRatingSize();
-        return $('<div class="full-start__rate custom-rating ' + className + '" style="font-size: ' + size + '"><div class="rating-icon-wrap"><img src="' + iconUrl + '" /></div><div style="color: ' + (color || '#fff') + '">' + value + '</div></div>');
+        var finalColor = color || getColor(value);
+        return $('<div class="full-start__rate custom-rating ' + className + '" style="font-size: ' + size + '"><div class="rating-icon-wrap"><img src="' + iconUrl + '" /></div><div style="color: ' + finalColor + '">' + value + '</div></div>');
     }
 
     function addRatingBlock(anchor, className, iconUrl, value) {
         if ($('.' + className).length > 0) return;
-        var block = createBlock(className, iconUrl, value, getColor(value));
+        var block = createBlock(className, iconUrl, value);
         anchor.after(block);
     }
 
@@ -122,10 +123,15 @@
                         }
                     }
 
-                    if (data.Metascore && data.Metascore !== 'N/A') addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                    if (data.Metascore && data.Metascore !== 'N/A') 
+                        addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                    
                     var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
-                    if (rt) addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
-                    if (data.imdbRating && data.imdbRating !== 'N/A') addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
+                    if (rt) 
+                        addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
+                    
+                    if (data.imdbRating && data.imdbRating !== 'N/A') 
+                        addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
                 }
             });
         };
@@ -212,6 +218,64 @@
             }
         });
     }
+
+    // ============ НОВИЙ КОД ДЛЯ КОЛЬОРІВ НА ГОЛОВНІЙ ============
+    
+    // Функція для отримання кольору залежно від рейтингу
+    function getMainPageRatingColor(rating) {
+        var val = parseFloat(rating);
+        if (!val || val === 0) return '#ffffff';
+        if (val < 5) return '#ff4d4d';      // червоний для низьких
+        if (val < 6.5) return '#ff9f43';    // оранжевий для середніх
+        if (val < 8) return '#feca57';       // жовтий для хороших
+        return '#2ecc71';                    // зелений для відмінних
+    }
+    
+    // Функція оновлення кольорів рейтингів на головній
+    function updateMainPageRatings() {
+        // Знаходимо всі рейтинги на головній
+        $('.card-film__rating, .full-start__rate, .rate--tmdb, .rate--kp').each(function() {
+            var $this = $(this);
+            var ratingText = $this.text().trim();
+            
+            // Парсимо число з тексту
+            var ratingMatch = ratingText.match(/(\d+\.?\d*)/);
+            if (ratingMatch) {
+                var rating = parseFloat(ratingMatch[1]);
+                var color = getMainPageRatingColor(rating);
+                
+                // Застосовуємо колір
+                $this.css('color', color);
+                
+                // Додаємо клас для можливого подальшого стилізування
+                $this.addClass('colored-rating');
+            }
+        });
+    }
+    
+    // Спостерігач за змінами в DOM
+    var observer = new MutationObserver(function(mutations) {
+        updateMainPageRatings();
+    });
+    
+    // Починаємо спостереження за змінами в body
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Перше оновлення при завантаженні
+    setTimeout(updateMainPageRatings, 1000);
+    setTimeout(updateMainPageRatings, 3000);
+    
+    // Оновлюємо при скролі
+    $(window).on('scroll', function() {
+        setTimeout(updateMainPageRatings, 100);
+    });
+    
+    console.log('Скрипт кольорів рейтингів на головній активовано');
+    
+    // ============ КІНЕЦЬ НОВОГО КОДУ ============
 
     if (!window.lampa_omdb_plugin_loaded) startPlugin();
 })();
