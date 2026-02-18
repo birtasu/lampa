@@ -1,566 +1,2269 @@
 /**
- * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges
- * Оновлено 2026:
- * • видалено зайві поліфіли (залишено тільки перевірки Promise/fetch)
- * • додано votes / percent / count до плиток (IMDb, RT, Metacritic)
- * • додано кольори за джерелом (незалежно від colorize_all)
- * • покращено повідомлення про помилки API
+ * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges (like LME - Lampa Movie Enchancer)
+ * --------------------------------------------------------
+ * - Бере рейтинги з MDBList (+ OMDb для віку/нагород) і малює їх у деталці
+ * - Додає опційні "стікери" (badges) рейтингів прямо на постери
+ * - Має секцію налаштувань "Рейтинги", живе застосування стилів без перезавантаження
+ * - Додано відображення кількості голосів біля кожного рейтингу (виправлено)
  */
 
 (function() {
-  'use strict';
+    'use strict';
 
-  var pluginStyles = "<style>" +
-    ".loading-dots-container {" +
-    "    display: flex;" +
-    "    align-items: center;" +
-    "    font-size: 0.85em;" +
-    "    color: #ccc;" +
-    "    padding: 0.6em 1em;" +
-    "    border-radius: 0.5em;" +
-    "}" +
-    ".loading-dots__text {" +
-    "    margin-right: 1em;" +
-    "}" +
-    ".loading-dots__dot {" +
-    "    width: 0.5em;" +
-    "    height: 0.5em;" +
-    "    border-radius: 50%;" +
-    "    background-color: currentColor;" +
-    "    animation: loading-dots-bounce 1.4s infinite ease-in-out both;" +
-    "}" +
-    ".loading-dots__dot:nth-child(1) {" +
-    "    animation-delay: -0.32s;" +
-    "}" +
-    ".loading-dots__dot:nth-child(2) {" +
-    "    animation-delay: -0.16s;" +
-    "}" +
-    "@keyframes loading-dots-bounce {" +
-    "    0%, 80%, 100% { transform: translateY(0); opacity: 0.6; }" +
-    "    40% { transform: translateY(-0.5em); opacity: 1; }" +
-    "}" +
+    /* ==========================================================================
+     | localStorage shim
+     | (Фолбек, якщо localStorage вимкнено або недоступний)
+     |========================================================================== */
 
+    (function() {
+        var ok = true;
+        try {
+            var t = '__lmp_test__';
+            window.localStorage.setItem(t, '1');
+            window.localStorage.removeItem(t);
+        } catch (e) {
+            ok = false;
+        }
+        if (!ok) {
+            var mem = {};
+            window.localStorage = {
+                getItem: function(k) { return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null; },
+                setItem: function(k, v) { mem[k] = String(v); },
+                removeItem: function(k) { delete mem[k]; },
+                clear: function() { mem = {}; }
+            };
+        }
+    })();
 
-    ":root{" +
-    "  --lmp-h-imdb:22px;" +
-    "  --lmp-h-mc:22px;" +
-    "  --lmp-h-rt:24px;" +
-    "  --lmp-h-popcorn:24px;" +
-    "  --lmp-h-tmdb:24px;" +
-    "  --lmp-h-awards:18px;" + 
-    "  --lmp-h-avg:18px;" + 
-    "  --lmp-h-oscar:20px;" + 
-    "  --lmp-h-emmy:22px;" + 
-    "}" +
+    /* ==========================================================================
+     | Promise (мінімальний поліфіл)
+     | (Достатньо для then/catch/all)
+     |========================================================================== */
 
-    ".rate--oscars, .rate--emmy, .rate--awards, .rate--gold {" +
-    "    color: gold;" +
-    "}" +
+    (function(global) {
+        if (global.Promise) return;
+        var PENDING = 0, FULFILLED = 1, REJECTED = 2;
+        function asap(fn) { setTimeout(fn, 0); }
+        function MiniPromise(executor) {
+            if (!(this instanceof MiniPromise)) return new MiniPromise(executor);
+            var self = this;
+            self._state = PENDING;
+            self._value = void 0;
+            self._handlers = [];
+            function resolve(value) {
+                if (self._state !== PENDING) return;
+                if (value && (typeof value === 'object' || typeof value === 'function')) {
+                    var then;
+                    try { then = value.then; } catch (e) { return reject(e); }
+                    if (typeof then === 'function') return then.call(value, resolve, reject);
+                }
+                self._state = FULFILLED;
+                self._value = value;
+                finale();
+            }
+            function reject(reason) {
+                if (self._state !== PENDING) return;
+                self._state = REJECTED;
+                self._value = reason;
+                finale();
+            }
+            function finale() {
+                asap(function() {
+                    var q = self._handlers;
+                    self._handlers = [];
+                    for (var i = 0; i < q.length; i++) handle(q[i]);
+                });
+            }
+            function handle(h) {
+                if (self._state === PENDING) {
+                    self._handlers.push(h);
+                    return;
+                }
+                var cb = self._state === FULFILLED ? h.onFulfilled : h.onRejected;
+                if (!cb) {
+                    (self._state === FULFILLED ? h.resolve : h.reject)(self._value);
+                    return;
+                }
+                try {
+                    var ret = cb(self._value);
+                    h.resolve(ret);
+                } catch (e) {
+                    h.reject(e);
+                }
+            }
+            this.then = function(onFulfilled, onRejected) {
+                return new MiniPromise(function(resolve, reject) {
+                    handle({
+                        onFulfilled: onFulfilled,
+                        onRejected: onRejected,
+                        resolve: resolve,
+                        reject: reject
+                    });
+                });
+            };
+            this.catch = function(onRejected) {
+                return this.then(null, onRejected);
+            };
+            try { executor(resolve, reject); } catch (e) { reject(e); }
+        }
+        MiniPromise.resolve = function(v) { return new MiniPromise(function(res) { res(v); }); };
+        MiniPromise.reject = function(r) { return new MiniPromise(function(_, rej) { rej(r); }); };
+        MiniPromise.all = function(arr) {
+            return new MiniPromise(function(resolve, reject) {
+                if (!arr || !arr.length) return resolve([]);
+                var out = new Array(arr.length), left = arr.length;
+                for (var i = 0; i < arr.length; i++)(function(i) {
+                    MiniPromise.resolve(arr[i]).then(function(v) {
+                        out[i] = v;
+                        if (--left === 0) resolve(out);
+                    }, reject);
+                })(i);
+            });
+        };
+        global.Promise = MiniPromise;
+    })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
 
+    /* ==========================================================================
+     | fetch polyfill
+     | (З урахуванням Lampa.Reguest для обходу CORS)
+     |========================================================================== */
 
-    "body.lmp-enh--mono .rate--oscars," +
-    "body.lmp-enh--mono .rate--emmy," +
-    "body.lmp-enh--mono .rate--awards," +
-    "body.lmp-enh--mono .rate--gold," +
-    "body.lmp-enh--mono .rating--green," +
-    "body.lmp-enh--mono .rating--blue," +
-    "body.lmp-enh--mono .rating--orange," +
-    "body.lmp-enh--mono .rating--red," +
-    "body.lmp-enh--mono .full-start__rate {" +
-    "    color: inherit !important;" +
-    "}" +
+    (function(global) {
+        if (global.fetch) return;
+        function Response(body, init) {
+            this.status = init && init.status || 200;
+            this.ok = this.status >= 200 && this.status < 300;
+            this._body = body == null ? '' : String(body);
+            this.headers = (init && init.headers) || {};
+        }
+        Response.prototype.text = function() {
+            var self = this;
+            return Promise.resolve(self._body);
+        };
+        Response.prototype.json = function() {
+            var self = this;
+            return Promise.resolve().then(function() {
+                return JSON.parse(self._body || 'null');
+            });
+        };
+        global.fetch = function(input, init) {
+            init = init || {};
+            var url = (typeof input === 'string') ? input : (input && input.url) || '';
+            var method = (init.method || 'GET').toUpperCase();
+            var headers = init.headers || {};
+            var body = init.body || null;
+            if (global.Lampa && Lampa.Reguest) {
+                return new Promise(function(resolve) {
+                    new Lampa.Reguest().native(
+                        url,
+                        function(data) {
+                            var text = (typeof data === 'string') ? data : (data != null ? JSON.stringify(data) : '');
+                            resolve(new Response(text, { status: 200, headers: headers }));
+                        },
+                        function() {
+                            resolve(new Response('', { status: 500, headers: headers }));
+                        },
+                        false,
+                        { dataType: 'text', method: method, headers: headers, data: body }
+                    );
+                });
+            }
+            return new Promise(function(resolve, reject) {
+                try {
+                    var xhr = new XMLHttpRequest();
+                    xhr.open(method, url, true);
+                    for (var k in headers) {
+                        if (Object.prototype.hasOwnProperty.call(headers, k)) xhr.setRequestHeader(k, headers[k]);
+                    }
+                    xhr.onload = function() {
+                        resolve(new Response(xhr.responseText, { status: xhr.status, headers: headers }));
+                    };
+                    xhr.onerror = function() {
+                        reject(new TypeError('Network request failed'));
+                    };
+                    xhr.send(body);
+                } catch (e) {
+                    reject(e);
+                }
+            });
+        };
+    })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
 
+    /* ==========================================================================
+     | 1. ШИМИ / ПОЛІФІЛИ
+     | (Для старих Android Webview)
+     |========================================================================== */
 
-    "body:not(.lmp-enh--mono) .full-start__rate.rating--green  { color: #2ecc71; }" + /* ≥ 8.0  */
-    "body:not(.lmp-enh--mono) .full-start__rate.rating--blue   { color: #60a5fa; }" + /* 6.0–7.9 */
-    "body:not(.lmp-enh--mono) .full-start__rate.rating--orange { color: #f59e0b; }" + /* 4.0–5.9 */
-    "body:not(.lmp-enh--mono) .full-start__rate.rating--red    { color: #ef4444; }" + /* < 4.0   */
-
-
-    ".full-start-new__rate-line .full-start__rate {" +
-    "    margin-right: 0.3em !important;" +
-    "}" +
-    ".full-start-new__rate-line .full-start__rate:last-child {" +
-    "    margin-right: 0 !important;" +
-    "}" +
-
-
-    ".full-start-new__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader)," +
-    ".full-start__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader) {" +
-    "    opacity: 0 !important;" +
-    "    pointer-events: none !important;" +
-    "    transition: opacity 0.15s;" +
-    "}" +
-
-
-    ".lmp-award-icon{" +
-    "  display:inline-flex;" +
-    "  align-items:center;" +
-    "  justify-content:center;" +
-    "  line-height:1;" +
-    "  height:auto;" +
-    "  width:auto;" +
-    "  flex-shrink:0;" +
-    "}" +
-    ".lmp-award-icon img{" +
-    "  height:auto;" +
-    "  width:auto;" +
-    "  display:block;" +
-    "  object-fit:contain;" +
-    "}" +
-    ".lmp-award-icon--oscar img{height:var(--lmp-h-oscar);}" +
-    ".lmp-award-icon--emmy  img{height:var(--lmp-h-emmy);}" +
-
-
-    ".rate--imdb    .source--name img{height:var(--lmp-h-imdb);}" +
-    ".rate--mc      .source--name img{height:var(--lmp-h-mc);}" +
-    ".rate--rt      .source--name img{height:var(--lmp-h-rt);}" +
-    ".rate--popcorn .source--name img{height:var(--lmp-h-popcorn);}" +
-    ".rate--tmdb    .source--name img{height:var(--lmp-h-tmdb);}" +
-    ".rate--awards  .source--name img{height:var(--lmp-h-awards);}" +
-    ".rate--avg     .source--name img{height:var(--lmp-h-avg);}" +
-
-
-    ".full-start__rate .source--name{" +
-    "  display:inline-flex;" +
-    "  align-items:center;" +
-    "  justify-content:center;" +
-    "}" +
-
-
-    ".settings-param__descr,.settings-param__subtitle{white-space:pre-line;}" +
-
-
-    "@media (max-width: 600px){" +
-    "  .full-start-new__rate-line{flex-wrap:wrap;}" +
-    "  .full-start__rate{" +
-    "    margin-right:.25em !important;" +
-    "    margin-bottom:.25em;" +
-    "    font-size:16px;" +
-    "    min-width:unset;" +
-    "  }" +
-    "  :root{" +
-    "    --lmp-h-imdb:14px; --lmp-h-mc:14px; --lmp-h-rt:16px;" +
-    "    --lmp-h-popcorn:16px; --lmp-h-tmdb:16px; --lmp-h-awards:14px;" +
-    "    --lmp-h-avg:14px; --lmp-h-oscar:14px; --lmp-h-emmy:16px;" +
-    "  }" +
-    "  .loading-dots-container{font-size:.8em; padding:.4em .8em;}" +
-    "  .lmp-award-icon{height:16px;}" +
-    "}" +
-
-
-    "@media (max-width: 360px){" +
-    "  .full-start__rate{font-size:14px;}" +
-    "  :root{" +
-    "    --lmp-h-imdb:12px; --lmp-h-mc:12px; --lmp-h-rt:14px;" +
-    "    --lmp-h-popcorn:14px; --lmp-h-tmdb:14px; --lmp-h-awards:12px;" +
-    "    --lmp-h-avg:12px; --lmp-h-oscar:12px; --lmp-h-emmy:14px;" +
-    "  }" +
-    "  .lmp-award-icon{height:12px;}" +
-    "}" +
-
-
-    "body.lmp-enh--rate-border .full-start__rate{" +
-    "  border: 1px solid rgba(255, 255, 255, 0.45);" +
-    "  border-radius: 0.3em;" +
-    "  box-sizing: border-box;" +
-    "}" +
-
-    "body.lmp-enh--rate-border .full-start-new__rate-line, " +
-    "body.lmp-enh--rate-border .full-start__rate-line{" +
-    "  flex-wrap: wrap;" +
-    "  gap: 0.3em;" +
-    "}" +
-    "</style>";
-
-  // Мінімальні перевірки Promise та fetch
-  if (!window.Promise) {
-    console.warn('[LMP Ratings] Native Promise відсутній — дуже стара платформа');
-  }
-
-  if (!window.fetch) {
-    console.warn('[LMP Ratings] Використовуємо Lampa.Reguest як фолбек для fetch');
-  }
-    // Константи та конфігурація
-  var LMP_ENH_CONFIG = {
-    apiKeys: {
-      mdblist: '',
-      omdb: ''
-    },
-    monochromeIcons: false
-  };
-
-  var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/'; // або свій шлях
-
-  var ICONS = {
-    total_star: BASE_ICON + 'star.png',
-    imdb:       BASE_ICON + 'imdb.png',
-    tmdb:       BASE_ICON + 'tmdb.png',
-    metacritic: BASE_ICON + 'metacritic.png',
-    metascore:  BASE_ICON + 'metascore.png',
-    rotten_good: BASE_ICON + 'RottenTomatoes.png',
-    rotten_bad:  BASE_ICON + 'RottenBad.png',
-    popcorn:     BASE_ICON + 'PopcornGood.png',
-    awards:      BASE_ICON + 'awards.png',
-    oscar:       BASE_ICON + 'OscarGold.png',
-    emmy:        BASE_ICON + 'EmmyGold.png'
-  };
-
-  var CACHE_TIME = 3 * 24 * 60 * 60 * 1000; // 3 дні
-
-  var RCFG_DEFAULT = {
-    ratings_omdb_key: '',
-    ratings_mdblist_key: '',
-    ratings_bw_logos: false,
-    ratings_show_awards: true,
-    ratings_show_average: true,
-    ratings_logo_offset: 0,
-    ratings_font_offset: 0,
-    ratings_badge_alpha: 0.15,
-    ratings_badge_tone: 0,
-    ratings_gap_step: 0,
-    ratings_colorize_all: false,
-    ratings_color_by_source: true,
-    ratings_enable_imdb: true,
-    ratings_enable_tmdb: true,
-    ratings_enable_mc: true,
-    ratings_enable_rt: true,
-    ratings_enable_popcorn: true,
-    ratings_poster_badges: false,
-    ratings_rate_border: false
-  };
-
-  var AGE_RATINGS = {
-    'G': '3+', 'PG': '6+', 'PG-13': '13+', 'R': '17+', 'NC-17': '18+',
-    'TV-Y': '0+', 'TV-Y7': '7+', 'TV-G': '3+', 'TV-PG': '6+', 'TV-14': '14+', 'TV-MA': '17+'
-  };
-
-  // Покращені повідомлення про помилки
-  function apiErrorToast(source, errorType, details = '') {
-    let msg = '';
-    switch (errorType) {
-      case 'key_missing':   msg = `API ключ для ${source} не введено в налаштуваннях`; break;
-      case 'network':       msg = `${source}: проблема з'єднання з мережею`; break;
-      case 'limit':         msg = `${source}: ліміт запитів вичерпано на сьогодні`; break;
-      case 'not_found':     msg = `${source}: дані по фільму/серіалу не знайдено (404)`; break;
-      case 'invalid_key':   msg = `${source}: невалідний або заблокований API ключ`; break;
-      case 'parse_error':   msg = `${source}: помилка обробки відповіді сервера`; break;
-      default:              msg = `${source}: не вдалося завантажити рейтинги`;
+    if (window.NodeList && !NodeList.prototype.forEach) {
+        NodeList.prototype.forEach = function(callback, thisArg) {
+            thisArg = thisArg || window;
+            for (var i = 0; i < this.length; i++) {
+                callback.call(thisArg, this[i], i, this);
+            }
+        };
     }
-    if (details) msg += ` (${details})`;
-    lmpToast(msg);
-    console.error('[LMP Ratings Error]', source, errorType, details);
-  }
 
-  // Кольори за джерелом
-  function getSourceColorClass(source, value, extra = {}) {
-    if (!LMP_ENH_CONFIG || !LMP_ENH_CONFIG.color_by_source) return '';
+    if (!Element.prototype.matches) {
+        Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector || function(selector) {
+            var node = this;
+            var nodes = (node.parentNode || document).querySelectorAll(selector);
+            for (var i = 0; i < nodes.length; i++) {
+                if (nodes[i] === node) return true;
+            }
+            return false;
+        };
+    }
 
-    let v = parseFloat(value);
-    if (isNaN(v)) return '';
+    if (!Element.prototype.closest) {
+        Element.prototype.closest = function(selector) {
+            var el = this;
+            while (el && el.nodeType === 1) {
+                if (el.matches(selector)) return el;
+                el = el.parentElement || el.parentNode;
+            }
+            return null;
+        };
+    }
 
-    switch (source.toLowerCase()) {
-      case 'imdb':
-        if (v >= 8.0) return 'rating--green';
-        if (v >= 6.5) return 'rating--blue';
-        if (v >= 5.0) return 'rating--orange';
+    /* ==========================================================================
+     | 2. КОНСТАНТИ ТА КОНФІГУРАЦІЯ
+     |========================================================================== */
+
+    var LMP_ENH_CONFIG = {
+        apiKeys: {
+            mdblist: '',
+            omdb: ''
+        },
+        monochromeIcons: false
+    };
+
+    var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/';
+    var ICONS = {
+        total_star: BASE_ICON + 'star.png',
+        imdb: BASE_ICON + 'imdb.png',
+        tmdb: BASE_ICON + 'tmdb.png',
+        metacritic: BASE_ICON + 'metacritic.png',
+        metascore: BASE_ICON + 'metascore.png',
+        rotten_good: BASE_ICON + 'RottenTomatoes.png',
+        rotten_bad: BASE_ICON + 'RottenBad.png',
+        popcorn: BASE_ICON + 'PopcornGood.png',
+        awards: BASE_ICON + 'awards.png',
+        oscar: BASE_ICON + 'OscarGold.png',
+        emmy: BASE_ICON + 'EmmyGold.png'
+    };
+
+    Lampa.Lang.add({
+        oscars_label: { uk: 'Оскар' },
+        emmy_label: { uk: 'Еммі' },
+        awards_other_label: { uk: 'Нагороди' },
+        popcorn_label: { uk: 'Глядачі' },
+        source_tmdb: { ru: 'TMDB', en: 'TMDB', uk: 'TMDB' },
+        source_imdb: { ru: 'IMDb', en: 'IMDb', uk: 'IMDb' },
+        source_mc: { ru: 'Metacritic', en: 'Metacritic', uk: 'Metacritic' },
+        source_rt: { ru: 'Rotten', en: 'Rotten', uk: 'Rotten' },
+        votes_label: { uk: 'голосів' }
+    });
+
+    var pluginStyles = "<style>" +
+        ".loading-dots-container {" +
+        " display: flex;" +
+        " align-items: center;" +
+        " font-size: 0.85em;" +
+        " color: #ccc;" +
+        " padding: 0.6em 1em;" +
+        " border-radius: 0.5em;" +
+        "}" +
+        ".loading-dots__text {" +
+        " margin-right: 1em;" +
+        "}" +
+        ".loading-dots__dot {" +
+        " width: 0.5em;" +
+        " height: 0.5em;" +
+        " border-radius: 50%;" +
+        " background-color: currentColor;" +
+        " animation: loading-dots-bounce 1.4s infinite ease-in-out both;" +
+        "}" +
+        ".loading-dots__dot:nth-child(1) {" +
+        " animation-delay: -0.32s;" +
+        "}" +
+        ".loading-dots__dot:nth-child(2) {" +
+        " animation-delay: -0.16s;" +
+        "}" +
+        "@keyframes loading-dots-bounce {" +
+        " 0%, 80%, 100% { transform: translateY(0); opacity: 0.6; }" +
+        " 40% { transform: translateY(-0.5em); opacity: 1; }" +
+        "}" +
+        ":root{" +
+        " --lmp-h-imdb:22px;" +
+        " --lmp-h-mc:22px;" +
+        " --lmp-h-rt:24px;" +
+        " --lmp-h-popcorn:24px;" +
+        " --lmp-h-tmdb:24px;" +
+        " --lmp-h-awards:18px;" +
+        " --lmp-h-avg:18px;" +
+        " --lmp-h-oscar:20px;" +
+        " --lmp-h-emmy:22px;" +
+        "}" +
+        ".rate--oscars, .rate--emmy, .rate--awards, .rate--gold {" +
+        " color: gold;" +
+        "}" +
+        "body.lmp-enh--mono .rate--oscars," +
+        "body.lmp-enh--mono .rate--emmy," +
+        "body.lmp-enh--mono .rate--awards," +
+        "body.lmp-enh--mono .rate--gold," +
+        "body.lmp-enh--mono .rating--green," +
+        "body.lmp-enh--mono .rating--blue," +
+        "body.lmp-enh--mono .rating--orange," +
+        "body.lmp-enh--mono .rating--red," +
+        "body.lmp-enh--mono .full-start__rate {" +
+        " color: inherit !important;" +
+        "}" +
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--green { color: #2ecc71; }" +
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--blue { color: #60a5fa; }" +
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--orange { color: #f59e0b; }" +
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--red { color: #ef4444; }" +
+        ".full-start-new__rate-line .full-start__rate {" +
+        " margin-right: 0.3em !important;" +
+        "}" +
+        ".full-start-new__rate-line .full-start__rate:last-child {" +
+        " margin-right: 0 !important;" +
+        "}" +
+        ".full-start-new__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader)," +
+        ".full-start__rate-line.lmp-is-loading-ratings > :not(#lmp-search-loader) {" +
+        " opacity: 0 !important;" +
+        " pointer-events: none !important;" +
+        " transition: opacity 0.15s;" +
+        "}" +
+        ".lmp-award-icon{" +
+        " display:inline-flex;" +
+        " align-items:center;" +
+        " justify-content:center;" +
+        " line-height:1;" +
+        " height:auto;" +
+        " width:auto;" +
+        " flex-shrink:0;" +
+        "}" +
+        ".lmp-award-icon img{" +
+        " height:auto;" +
+        " width:auto;" +
+        " display:block;" +
+        " object-fit:contain;" +
+        "}" +
+        ".lmp-award-icon--oscar img{height:var(--lmp-h-oscar);}" +
+        ".lmp-award-icon--emmy img{height:var(--lmp-h-emmy);}" +
+        ".rate--imdb .source--name img{height:var(--lmp-h-imdb);}" +
+        ".rate--mc .source--name img{height:var(--lmp-h-mc);}" +
+        ".rate--rt .source--name img{height:var(--lmp-h-rt);}" +
+        ".rate--popcorn .source--name img{height:var(--lmp-h-popcorn);}" +
+        ".rate--tmdb .source--name img{height:var(--lmp-h-tmdb);}" +
+        ".rate--awards .source--name img{height:var(--lmp-h-awards);}" +
+        ".rate--avg .source--name img{height:var(--lmp-h-avg);}" +
+        ".full-start__rate .source--name{" +
+        " display:inline-flex;" +
+        " align-items:center;" +
+        " justify-content:center;" +
+        "}" +
+        ".full-start__rate .votes-count {" +
+        " font-size: 0.7em;" +
+        " opacity: 0.8;" +
+        " margin-left: 0.3em;" +
+        " font-weight: normal;" +
+        "}" +
+        ".settings-param__descr,.settings-param__subtitle{white-space:pre-line;}" +
+        "@media (max-width: 600px){" +
+        " .full-start-new__rate-line{flex-wrap:wrap;}" +
+        " .full-start__rate{" +
+        " margin-right:.25em !important;" +
+        " margin-bottom:.25em;" +
+        " font-size:16px;" +
+        " min-width:unset;" +
+        " }" +
+        " :root{" +
+        " --lmp-h-imdb:14px; --lmp-h-mc:14px; --lmp-h-rt:16px;" +
+        " --lmp-h-popcorn:16px; --lmp-h-tmdb:16px; --lmp-h-awards:14px;" +
+        " --lmp-h-avg:14px; --lmp-h-oscar:14px; --lmp-h-emmy:16px;" +
+        " }" +
+        " .loading-dots-container{font-size:.8em; padding:.4em .8em;}" +
+        " .lmp-award-icon{height:16px;}" +
+        " .full-start__rate .votes-count{font-size:0.6em;}" +
+        "}" +
+        "@media (max-width: 360px){" +
+        " .full-start__rate{font-size:14px;}" +
+        " :root{" +
+        " --lmp-h-imdb:12px; --lmp-h-mc:12px; --lmp-h-rt:14px;" +
+        " --lmp-h-popcorn:14px; --lmp-h-tmdb:14px; --lmp-h-awards:12px;" +
+        " --lmp-h-avg:12px; --lmp-h-oscar:12px; --lmp-h-emmy:14px;" +
+        " }" +
+        " .lmp-award-icon{height:12px;}" +
+        " .full-start__rate .votes-count{font-size:0.5em;}" +
+        "}" +
+        "body.lmp-enh--rate-border .full-start__rate{" +
+        " border: 1px solid rgba(255, 255, 255, 0.45);" +
+        " border-radius: 0.3em;" +
+        " box-sizing: border-box;" +
+        "}" +
+        "body.lmp-enh--show-votes .full-start__rate .votes-count { display: inline; }" +
+        "body:not(.lmp-enh--show-votes) .full-start__rate .votes-count { display: none; }" +
+        ".card__lmerating{" +
+        " position:absolute;" +
+        " right:-0.8em;" +
+        " padding:0.40em 0.60em;" +
+        " background:linear-gradient(90deg,#2c2c2c,#1a1a1a);" +
+        " color:#fff;" +
+        " border-radius:0.35em;" +
+        " text-transform:uppercase;" +
+        " font-size:0.80em;" +
+        " line-height:1;" +
+        " box-shadow:0 2px 6px rgba(0,0,0,.35);" +
+        " z-index:5;" +
+        " pointer-events:none;" +
+        " white-space:nowrap;" +
+        "}" +
+        ".card__lmerating .votes-badge{" +
+        " font-size:0.8em;" +
+        " opacity:0.8;" +
+        " margin-left:0.2em;" +
+        "}" +
+        "@media (max-width:768px){" +
+        " .card__lmerating{ right:.2em; font-size:.74em; }" +
+        "}" +
+        "@media (max-width:480px){" +
+        " .card__lmerating{ right:.2em; font-size:.66em; }" +
+        "}" +
+        "</style>";
+
+    var CACHE_TIME = 3 * 24 * 60 * 60 * 1000;
+    var RATING_CACHE_KEY = 'lmp_enh_rating_cache';
+    var ID_MAPPING_CACHE = 'lmp_rating_id_cache';
+
+    var AGE_RATINGS = {
+        'G': '3+',
+        'PG': '6+',
+        'PG-13': '13+',
+        'R': '17+',
+        'NC-17': '18+',
+        'TV-Y': '0+',
+        'TV-Y7': '7+',
+        'TV-G': '3+',
+        'TV-PG': '6+',
+        'TV-14': '14+',
+        'TV-MA': '17+'
+    };
+
+    var RCFG_DEFAULT = {
+        ratings_omdb_key: '',
+        ratings_mdblist_key: '',
+        ratings_bw_logos: false,
+        ratings_show_awards: true,
+        ratings_show_average: true,
+        ratings_logo_offset: 0,
+        ratings_font_offset: 0,
+        ratings_badge_alpha: 0.15,
+        ratings_badge_tone: 0,
+        ratings_gap_step: 0,
+        ratings_colorize_all: false,
+        ratings_enable_imdb: true,
+        ratings_enable_tmdb: true,
+        ratings_enable_mc: true,
+        ratings_enable_rt: true,
+        ratings_enable_popcorn: true,
+        ratings_poster_badges: false,
+        ratings_rate_border: false,
+        ratings_show_votes: true
+    };
+
+    var __lmpRateLineObs = null;
+    var currentRatingsData = null;
+    var __lmpLastReqToken = null;
+
+    function getCardType(card) {
+        var type = card.media_type || card.type;
+        if (type === 'movie' || type === 'tv') return type;
+        return card.name || card.original_name ? 'tv' : 'movie';
+    }
+
+    (function() {
+        try {
+            var kpCss = '<style>.full-start__rate.rate--kp, .rate--kp{display:none!important;}</style>';
+            Lampa.Template.add('lmp_hide_kp', kpCss);
+            $('body').append(Lampa.Template.get('lmp_hide_kp', {}, true));
+        } catch (e) {}
+    })();
+
+    function getRatingClass(rating) {
+        var r = parseFloat(rating);
+        if (isNaN(r)) return 'rating--red';
+        if (r >= 8.0) return 'rating--green';
+        if (r >= 6.0) return 'rating--blue';
+        if (r >= 4.0) return 'rating--orange';
         return 'rating--red';
-
-      case 'tmdb':
-        if (v >= 8.0) return 'rating--green';
-        if (v >= 6.0) return 'rating--blue';
-        return 'rating--orange';
-
-      case 'rottentomatoes':
-      case 'rt':
-      case 'tomato':
-        return extra.fresh ? 'rating--green' : 'rating--red';
-
-      case 'metacritic':
-      case 'mc':
-      case 'metascore':
-        let mv = v * 10;
-        if (mv >= 80) return 'rating--green';
-        if (mv >= 60) return 'rating--blue';
-        if (mv >= 40) return 'rating--orange';
-        return 'rating--red';
-
-      case 'popcorn':
-      case 'audience':
-        if (v >= 80) return 'rating--green';
-        if (v >= 60) return 'rating--blue';
-        return 'rating--orange';
-
-      default:
-        return '';
-    }
-  }
-
-  // Форматування чисел (1.2M, 45K)
-  function formatNumber(n) {
-    if (!n || isNaN(n)) return '?';
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000)     return (n / 1000).toFixed(0)   + 'K';
-    return n.toString();
-  }
-    // Оновлена функція insertRatings
-  function insertRatings(data) {
-    var render = Lampa.Activity.active().activity.render();
-    if (!render) return;
-
-    cleanupRtgInjected(render);
-    var rateLine = getPrimaryRateLine(render);
-    if (!rateLine.length) return;
-
-    var cfg = getCfg();
-
-    // IMDb
-    (function() {
-      if (!cfg.enableImdb || !data.imdb_display) return;
-
-      var text = data.imdb_display;
-      var extra = data.imdb_votes ? ` (${formatNumber(data.imdb_votes)})` : '';
-
-      var $cont = $('.rate--imdb', rateLine);
-      if (!$cont.length) {
-        $cont = $(`
-          <div class="full-start__rate rate--imdb">
-            <div>${text}${extra}</div>
-            <div class="source--name"></div>
-          </div>
-        `);
-        $cont.find('.source--name').html(iconImg(ICONS.imdb, 'IMDb', 22));
-        rateLine.append($cont);
-      } else {
-        $cont.find('> div:first').text(text + extra);
-      }
-
-      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
-      if (cfg.ratings_color_by_source) {
-        $cont.addClass(getSourceColorClass('imdb', data.imdb_display));
-      } else if (cfg.ratings_colorize_all) {
-        $cont.addClass(getRatingClass(parseFloat(data.imdb_for_avg || 0)));
-      }
-    })();
-
-    // Rotten Tomatoes
-    (function() {
-      if (!cfg.enableRt || !data.rt_display) return;
-
-      var text = data.rt_display + '%';
-      var extra = data.rt_audience_score ? ` | ${data.rt_audience_score}% (${formatNumber(data.rt_audience_count || '?')})` : '';
-
-      var $cont = $('.rate--rt', rateLine);
-      if (!$cont.length) {
-        $cont = $(`
-          <div class="full-start__rate rate--rt">
-            <div>${text}${extra}</div>
-            <div class="source--name"></div>
-          </div>
-        `);
-        var icon = data.rt_fresh ? ICONS.rotten_good : ICONS.rotten_bad;
-        $cont.find('.source--name').html(iconImg(icon, 'Rotten Tomatoes', 22));
-        rateLine.append($cont);
-      } else {
-        $cont.find('> div:first').text(text + extra);
-      }
-
-      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
-      if (cfg.ratings_color_by_source) {
-        $cont.addClass(getSourceColorClass('rt', data.rt_display, {fresh: data.rt_fresh}));
-      } else if (cfg.ratings_colorize_all) {
-        $cont.addClass(getRatingClass(data.rt_for_avg || 0));
-      }
-    })();
-
-    // Metacritic
-    (function() {
-      if (!cfg.enableMc || !data.mc_display) return;
-
-      var text = data.mc_display;
-      var extra = '';
-      if (data.mc_critic_count) {
-        extra = ` (${formatNumber(data.mc_critic_count)} критик)`;
-      } else if (data.mc_user_count) {
-        extra = ` (${formatNumber(data.mc_user_count)} глядач)`;
-      }
-
-      var $cont = $('.rate--mc', rateLine);
-      if (!$cont.length) {
-        $cont = $(`
-          <div class="full-start__rate rate--mc">
-            <div>${text}${extra}</div>
-            <div class="source--name"></div>
-          </div>
-        `);
-        $cont.find('.source--name').html(iconImg(ICONS.metascore, 'Metacritic', 22));
-        rateLine.append($cont);
-      } else {
-        $cont.find('> div:first').text(text + extra);
-      }
-
-      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
-      if (cfg.ratings_color_by_source) {
-        $cont.addClass(getSourceColorClass('metacritic', data.mc_display));
-      } else if (cfg.ratings_colorize_all) {
-        $cont.addClass(getRatingClass(data.mc_for_avg || 0));
-      }
-    })();
-
-    applyStylesToAll();
-  }
-    // Оновлений fetchMdbListRatings
-  function fetchMdbListRatings(card, callback) {
-    var key = LMP_ENH_CONFIG.apiKeys.mdblist;
-    if (!key) {
-      apiErrorToast('MDBList', 'key_missing');
-      return callback(null);
     }
 
-    var typeSegment = (card.type === 'tv') ? 'show' : card.type;
-    var url = `https://api.mdblist.com/tmdb/${typeSegment}/${card.id}?apikey=${encodeURIComponent(key)}`;
+    function posterCacheKeyForCard(card) {
+        return 'poster_' + (card.type || getCardType(card)) + '_' + (card.imdb_id || card.id);
+    }
 
-    new Lampa.Reguest().silent(url,
-      function(response) {
-        if (!response || !response.ratings || !Array.isArray(response.ratings)) {
-          apiErrorToast('MDBList', 'not_found', 'немає рейтингів у відповіді');
-          return callback(null);
+    function lmpRawVal(it) {
+        if (!it || typeof it !== 'object') return null;
+        var v = it.value;
+        if (v == null) v = it.score;
+        if (v == null) v = it.rating;
+        if (v == null) v = it.percent;
+        if (v == null && typeof it.display === 'string') v = it.display;
+        return v == null ? null : v;
+    }
+
+    function filterMdblistLike(arr) {
+        if (!Array.isArray(arr)) return [];
+        var isCub = (Lampa.Storage.get('source') || '').toLowerCase() === 'cub';
+        return arr.filter(function(x) {
+            if (!x) return false;
+            var val = lmpRawVal(x);
+            if (val == null) return false;
+            var s = String(x.source || '').toLowerCase();
+            if (s === 'tmdb') return false;
+            if (isCub && s === 'imdb') return false;
+            return true;
+        });
+    }
+
+    function buildMdblistLikeArray(data) {
+        if (data && Array.isArray(data._mdblist_ratings) && data._mdblist_ratings.length) {
+            return data._mdblist_ratings.slice();
+        }
+        var a = [], d = data || {};
+        if (d.imdb_display) a.push({ source: 'imdb', value: d.imdb_display, votes: d.imdb_votes });
+        if (d.mc_critic_display) a.push({ source: 'metacritic', value: d.mc_critic_display, votes: d.mc_critic_votes });
+        if (d.mc_user_display) a.push({ source: 'metacritic_user', value: d.mc_user_display, votes: d.mc_user_votes });
+        if (d.rt_display) a.push({ source: 'rottentomatoes', value: d.rt_display, votes: d.rt_votes });
+        if (d.popcorn_display) a.push({ source: 'popcorn', value: d.popcorn_display, votes: d.popcorn_votes });
+        if (d.tmdb_display) a.push({ source: 'tmdb', value: d.tmdb_display, votes: d.tmdb_votes });
+        return a;
+    }
+
+    function iconImg(url, alt, sizePx, extraStyle) {
+        return '<img style="' +
+            'width:auto; display:inline-block; vertical-align:middle; ' +
+            'object-fit:contain; ' + (extraStyle || '') + ' ' +
+            '" ' +
+            'src="' + url + '" alt="' + (alt || '') + '">';
+    }
+
+    function emmyIconInline() {
+        return '<span class="lmp-award-icon lmp-award-icon--emmy"><img src="' + ICONS.emmy + '" alt="Emmy"></span>';
+    }
+
+    function oscarIconInline() {
+        return '<span class="lmp-award-icon lmp-award-icon--oscar"><img src="' + ICONS.oscar + '" alt="Oscar"></span>';
+    }
+
+    function formatVotes(votes) {
+        if (!votes) return '';
+        if (votes >= 1000000) return (votes / 1000000).toFixed(1) + 'M';
+        if (votes >= 1000) return (votes / 1000).toFixed(1) + 'K';
+        return votes.toString();
+    }
+
+    function dimRateLine(rateLine) {
+        if (!rateLine || !rateLine.length) return;
+        rateLine.addClass('lmp-is-loading-ratings');
+    }
+
+    function undimRateLine(rateLine) {
+        if (!rateLine || !rateLine.length) return;
+        rateLine.removeClass('lmp-is-loading-ratings');
+    }
+
+    function getPrimaryRateLine(render){
+        if (!render || !render.length) return $();
+        var $left = $('.cardify__left .full-start-new__rate-line.rate-fix:not([data-lmp-fake]), .cardify__left .full-start__rate-line.rate-fix:not([data-lmp-fake])', render).first();
+        if ($left.length) return $left;
+        var $any = $('.full-start-new__rate-line:not([data-lmp-fake]), .full-start__rate-line:not([data-lmp-fake])', render)
+            .filter(function(){
+                return !$(this).closest('.cardify__right').length;
+            })
+            .first();
+        return $any;
+    }
+
+    function cleanupRtgInjected(render){
+        if (!render || !render.length) return;
+        render.find(
+            '.rate--mc, .rate--rt, .rate--popcorn, .rate--avg,' +
+            '.rate--awards, .rate--emmy, .rate--oscars'
+        ).remove();
+    }
+
+    function addLoadingAnimation() {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render || !render[0]) return;
+        if ($('#lmp-search-loader', render).length) return;
+        var loaderHtml = '<div id="lmp-search-loader" class="loading-dots-container">' +
+            '<div class="loading-dots__text">Пошук…</div>' +
+            '<div class="loading-dots__dot"></div>' +
+            '<div class="loading-dots__dot"></div>' +
+            '<div class="loading-dots__dot"></div>' +
+            '</div>';
+        var rateLine = getPrimaryRateLine(render);
+        if (rateLine.length) {
+            rateLine.append(loaderHtml);
+            dimRateLine(rateLine);
+            return;
+        }
+        var fake = $(
+            '<div class="full-start-new__rate-line" ' +
+            ' id="lmp-loader-fake" data-lmp-fake="1" ' +
+            ' style="min-height:28px; display:flex; align-items:center;"></div>'
+        );
+        var anchor = $('.full-start-new__title, .full-start__title', render).first();
+        if (anchor.length) anchor.after(fake);
+        else $(render).append(fake);
+        fake.append(loaderHtml);
+        try { if (__lmpRateLineObs) __lmpRateLineObs.disconnect(); } catch (_) {}
+        __lmpRateLineObs = new MutationObserver(function() {
+            var rl = getPrimaryRateLine(render);
+            var loader = $('#lmp-search-loader', render);
+            if (rl.length && loader.length) {
+                rl.append(loader);
+                dimRateLine(rl);
+                $('#lmp-loader-fake', render).remove();
+                try { __lmpRateLineObs.disconnect(); } catch (_) {}
+                __lmpRateLineObs = null;
+            }
+        });
+        __lmpRateLineObs.observe(render[0], { childList: true, subtree: true });
+        setTimeout(function() {
+            if (__lmpRateLineObs) {
+                try { __lmpRateLineObs.disconnect(); } catch (_) {}
+                __lmpRateLineObs = null;
+            }
+        }, 6000);
+    }
+
+    function removeLoadingAnimation() {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render || !render[0]) return;
+        $('#lmp-search-loader', render).remove();
+        $('#lmp-loader-fake', render).remove();
+        var rl = getPrimaryRateLine(render);
+        if (rl.length) undimRateLine(rl);
+        try { if (__lmpRateLineObs) __lmpRateLineObs.disconnect(); } catch (_) {}
+        __lmpRateLineObs = null;
+    }
+
+    function getCachedRatings(key) {
+        var cache = Lampa.Storage.get(RATING_CACHE_KEY) || {};
+        var item = cache[key];
+        if (!item) return null;
+        if (Date.now() - item.timestamp > CACHE_TIME) return null;
+        return item.data || null;
+    }
+
+    function saveCachedRatings(key, data) {
+        if (!data) return;
+        var cache = Lampa.Storage.get(RATING_CACHE_KEY) || {};
+        cache[key] = {
+            timestamp: Date.now(),
+            data: data
+        };
+        Lampa.Storage.set(RATING_CACHE_KEY, cache);
+    }
+
+    function parseAwards(awardsText) {
+        if (typeof awardsText !== 'string') return { oscars: 0, emmy: 0, awards: 0 };
+        var result = { oscars: 0, emmy: 0, awards: 0 };
+        var oscarMatch = awardsText.match(/Won (\d+) Oscars?/i);
+        if (oscarMatch && oscarMatch[1]) {
+            result.oscars = parseInt(oscarMatch[1], 10);
+        }
+        var emmyMatch = awardsText.match(/Won (\d+) Primetime Emmys?/i);
+        if (emmyMatch && emmyMatch[1]) {
+            result.emmy = parseInt(emmyMatch[1], 10);
+        }
+        var otherMatch = awardsText.match(/Another (\d+) wins?/i);
+        if (otherMatch && otherMatch[1]) {
+            result.awards = parseInt(otherMatch[1], 10);
+        }
+        if (result.awards === 0) {
+            var simpleMatch = awardsText.match(/(\d+) wins?/i);
+            if (simpleMatch && simpleMatch[1]) {
+                result.awards = parseInt(simpleMatch[1], 10);
+            }
+        }
+        return result;
+    }
+
+    (function() {
+        function fixTenIn(el) {
+            var t = (el.textContent || '').replace(/\u00A0/g, ' ').trim();
+            if (/^10(?:[.,]0+)?$/.test(t)) {
+                el.textContent = '10';
+            }
+        }
+        function scan(root) {
+            try {
+                var nodes = root.querySelectorAll('.full-start__rate > div:first-child');
+                for (var i = 0; i < nodes.length; i++) fixTenIn(nodes[i]);
+            } catch (e) {}
+        }
+        window.__lmpTenFixStart = function() {
+            try {
+                var render = Lampa && Lampa.Activity && Lampa.Activity.active() && Lampa.Activity.active().activity.render && Lampa.Activity.active().activity.render();
+                if (!render || !render[0]) return;
+                var target = render[0].querySelector('.full-start-new__rate-line, .full-start__rate-line') || render[0];
+                scan(target);
+                var MObs = window.MutationObserver || window.WebKitMutationObserver;
+                if (!MObs) return;
+                if (window.__lmpTenObs) {
+                    window.__lmpTenObs.disconnect();
+                    window.__lmpTenObs = null;
+                }
+                var obs = new MObs(function(muts) {
+                    for (var i = 0; i < muts.length; i++) {
+                        var m = muts[i];
+                        if (m.type === 'characterData') {
+                            var p = m.target && m.target.parentNode;
+                            if (p && p.nodeType === 1 && p.matches('.full-start__rate > div:first-child')) fixTenIn(p);
+                        } else if (m.type === 'childList') {
+                            var added = m.addedNodes || [];
+                            for (var j = 0; j < added.length; j++) {
+                                var n = added[j];
+                                if (!n || n.nodeType !== 1) continue;
+                                if (n.matches && n.matches('.full-start__rate > div:first-child')) fixTenIn(n);
+                                if (n.querySelectorAll) {
+                                    var inner = n.querySelectorAll('.full-start__rate > div:first-child');
+                                    for (var k = 0; k < inner.length; k++) fixTenIn(inner[k]);
+                                }
+                            }
+                        }
+                    }
+                });
+                obs.observe(target, { subtree: true, childList: true, characterData: true });
+                window.__lmpTenObs = obs;
+            } catch (e) {}
+        };
+    })();
+
+    function lmpToast(msg) {
+        try {
+            if (Lampa && typeof Lampa.Noty === 'function') {
+                Lampa.Noty(msg);
+                return;
+            }
+            if (Lampa && Lampa.Noty && Lampa.Noty.show) {
+                Lampa.Noty.show(msg);
+                return;
+            }
+        } catch (e) {}
+        var id = 'lmp_toast';
+        var el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = id;
+            el.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:2rem;padding:.6rem 1rem;background:rgba(0,0,0,.85);color:#fff;border-radius:.5rem;z-index:9999;font-size:14px;transition:opacity .2s;opacity:0';
+            document.body.appendChild(el);
+        }
+        el.textContent = msg;
+        el.style.opacity = '1';
+        setTimeout(function() { el.style.opacity = '0'; }, 1300);
+    }
+
+    function lmpRatingsClearCache() {
+        try {
+            Lampa.Storage.set(RATING_CACHE_KEY, {});
+            Lampa.Storage.set(ID_MAPPING_CACHE, {});
+            lmpToast('Кеш рейтингів очищено');
+        } catch (e) {
+            console.error('LMP Ratings: clear cache error', e);
+            lmpToast('Помилка очищення кешу');
+        }
+    }
+
+    function getImdbIdFromTmdb(tmdbId, type, callback) {
+        if (!tmdbId) return callback(null);
+        var preferredType = (type === 'movie') ? 'movie' : 'tv';
+        var altType = preferredType === 'movie' ? 'tv' : 'movie';
+        var cache = Lampa.Storage.get(ID_MAPPING_CACHE) || {};
+        var now = Date.now();
+
+        function fromCache(key) {
+            var item = cache[key];
+            if (!item) return null;
+            if (!item.imdb_id) return null;
+            if (now - item.timestamp > CACHE_TIME) return null;
+            return item.imdb_id;
         }
 
-        var res = {
-          tmdb_display: null, tmdb_for_avg: null,
-          imdb_display: null, imdb_for_avg: null, imdb_votes: null,
-          mc_user_display: null, mc_user_for_avg: null, mc_user_count: null,
-          mc_critic_display: null, mc_critic_for_avg: null, mc_critic_count: null,
-          rt_display: null, rt_for_avg: null, rt_fresh: null,
-          rt_audience_score: null, rt_audience_count: null,
-          popcorn_display: null, popcorn_for_avg: null,
-          _mdblist_ratings: response.ratings.slice()
+        var keyPreferred = preferredType + '_' + tmdbId;
+        var keyAlt = altType + '_' + tmdbId;
+        var cachedId = fromCache(keyPreferred) || fromCache(keyAlt);
+        if (cachedId) return callback(cachedId);
+
+        var tmdbKey = Lampa.TMDB.key();
+        var queue = [
+            'https://api.themoviedb.org/3/' + preferredType + '/' + tmdbId + '/external_ids?api_key=' + tmdbKey,
+            'https://api.themoviedb.org/3/' + preferredType + '/' + tmdbId + '?api_key=' + tmdbKey + '&append_to_response=external_ids',
+            'https://api.themoviedb.org/3/' + altType + '/' + tmdbId + '/external_ids?api_key=' + tmdbKey,
+            'https://api.themoviedb.org/3/' + altType + '/' + tmdbId + '?api_key=' + tmdbKey + '&append_to_response=external_ids'
+        ];
+
+        var makeRequest = function(u, success, error) {
+            new Lampa.Reguest().silent(u, success, function() {
+                new Lampa.Reguest().native(
+                    u,
+                    function(data) {
+                        try { success(typeof data === 'string' ? JSON.parse(data) : data); }
+                        catch (e) { error(); }
+                    },
+                    error,
+                    false,
+                    { dataType: 'json' }
+                );
+            });
         };
 
-        response.ratings.forEach(r => {
-          let src = (r.source || '').toLowerCase();
-          let val = parseFloat(r.value || r.score || r.percent || r.rating);
-          if (isNaN(val)) return;
+        function extractImdbId(obj) {
+            if (!obj || typeof obj !== 'object') return null;
+            if (obj.imdb_id && typeof obj.imdb_id === 'string') return obj.imdb_id;
+            if (obj.external_ids && typeof obj.external_ids.imdb_id === 'string') return obj.external_ids.imdb_id;
+            return null;
+        }
 
-          if (src.includes('tmdb')) {
-            let t = val > 10 ? val / 10 : val;
-            res.tmdb_display = t.toFixed(1);
-            res.tmdb_for_avg = t;
-          }
-          if (src.includes('imdb')) {
-            let i = val > 10 ? val / 10 : val;
-            res.imdb_display = i.toFixed(1);
-            res.imdb_for_avg = i;
-            if (r.votes) res.imdb_votes = r.votes;
-          }
-          if (src.includes('metacritic') && src.includes('user')) {
-            let u = val > 10 ? val / 10 : val;
-            res.mc_user_display = u.toFixed(1);
-            res.mc_user_for_avg = u;
-            if (r.reviews || r.votes) res.mc_user_count = r.reviews || r.votes;
-          }
-          if (src.includes('metacritic') && !src.includes('user')) {
-            let c = val > 10 ? val / 10 : val;
-            res.mc_critic_display = c.toFixed(1);
-            res.mc_critic_for_avg = c;
-            if (r.reviews || r.votes) res.mc_critic_count = r.reviews || r.votes;
-          }
-          if (src.includes('rotten') || src.includes('tomato')) {
-            res.rt_display = Math.round(val).toString();
-            res.rt_for_avg = val / 10;
-            res.rt_fresh = val >= 60;
-            if (r.audience_score) res.rt_audience_score = Math.round(r.audience_score);
-            if (r.audience_votes || r.audience_count) res.rt_audience_count = r.audience_votes || r.audience_count;
-          }
-          if (src.includes('popcorn') || src.includes('audience')) {
-            res.popcorn_display = Math.round(val).toString();
-            res.popcorn_for_avg = val / 10;
-          }
-        });
+        function saveAndReturn(id) {
+            var payload = { imdb_id: id, timestamp: Date.now() };
+            cache[keyPreferred] = payload;
+            cache[keyAlt] = payload;
+            Lampa.Storage.set(ID_MAPPING_CACHE, cache);
+            callback(id);
+        }
 
-        callback(res);
-      },
-      function(status, err) {
-        let type = 'network';
-        if (status === 401 || status === 403) type = 'invalid_key';
-        if (status === 429) type = 'limit';
-        if (status === 404) type = 'not_found';
-        apiErrorToast('MDBList', type, err || status);
-        callback(null);
-      }
-    );
-  }
-
-  // fetchOmdbRatings
-  function fetchOmdbRatings(card, callback) {
-    var key = LMP_ENH_CONFIG.apiKeys.omdb;
-    if (!key || !card.imdb_id) {
-      if (!key) apiErrorToast('OMDb', 'key_missing');
-      if (!card.imdb_id) console.warn('[LMP Ratings] OMDb: відсутній IMDb ID');
-      return callback(null);
+        (function next() {
+            var url = queue.shift();
+            if (!url) return callback(null);
+            makeRequest(url, function(data) {
+                var imdbId = extractImdbId(data);
+                if (imdbId) saveAndReturn(imdbId);
+                else next();
+            }, function() { next(); });
+        })();
     }
 
-    var typeParam = card.type === 'tv' ? '&type=series' : '';
-    var url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&i=${encodeURIComponent(card.imdb_id)}${typeParam}`;
+    function fetchMdbListRatings(card, callback) {
+        var key = LMP_ENH_CONFIG.apiKeys.mdblist;
+        if (!key) {
+            callback(null);
+            return;
+        }
+        var typeSegment = (card.type === 'tv') ? 'show' : card.type;
+        var url = 'https://api.mdblist.com/tmdb/' + typeSegment + '/' + card.id + '?apikey=' + encodeURIComponent(key);
 
-    new Lampa.Reguest().silent(url, function(data) {
-      if (!data || data.Response !== 'True') {
-        const errorText = (data && data.Error ? data.Error.toLowerCase() : '');
-        const type = errorText.includes('incorrect') ? 'invalid_key' :
-                     errorText.includes('not found') ? 'not_found' :
-                     !data ? 'network' : 'unknown';
-        apiErrorToast('OMDb', type, data.Error || '');
-        return callback(null);
-      }
+        new Lampa.Reguest().silent(url, handleSuccess, handleFail);
 
-      var awardsParsed = parseAwards(data.Awards || '');
-      var rtScore = null, mcScore = null;
+        function handleFail() {
+            new Lampa.Reguest().native(
+                url,
+                function(data) {
+                    try { handleSuccess(typeof data === 'string' ? JSON.parse(data) : data); }
+                    catch (e) { callback(null); }
+                },
+                function() { callback(null); },
+                false,
+                { dataType: 'json' }
+            );
+        }
 
-      if (Array.isArray(data.Ratings)) {
-        data.Ratings.forEach(r => {
-          if (r.Source === 'Rotten Tomatoes') {
-            rtScore = parseInt((r.Value || '').replace('%', '')) || null;
-          }
-          if (r.Source === 'Metacritic') {
-            mcScore = parseInt((r.Value || '').split('/')[0]) || null;
-          }
+        function handleSuccess(response) {
+            if (!response || !response.ratings || !response.ratings.length) {
+                callback(null);
+                return;
+            }
+
+            var res = {
+                tmdb_display: null, tmdb_for_avg: null, tmdb_votes: null,
+                imdb_display: null, imdb_for_avg: null, imdb_votes: null,
+                mc_user_display: null, mc_user_for_avg: null, mc_user_votes: null,
+                mc_critic_display: null, mc_critic_for_avg: null, mc_critic_votes: null,
+                rt_display: null, rt_for_avg: null, rt_fresh: null, rt_votes: null,
+                popcorn_display: null, popcorn_for_avg: null, popcorn_votes: null
+            };
+
+            function parseRawScore(rawVal) {
+                if (rawVal === null || rawVal === undefined) return null;
+                if (typeof rawVal === 'number') return rawVal;
+                if (typeof rawVal === 'string') {
+                    if (rawVal.indexOf('%') !== -1) {
+                        return parseFloat(rawVal.replace('%', ''));
+                    }
+                    if (rawVal.indexOf('/') !== -1) {
+                        return parseFloat(rawVal.split('/')[0]);
+                    }
+                    return parseFloat(rawVal);
+                }
+                return null;
+            }
+
+            function isUserSource(src) {
+                return (
+                    src.indexOf('user') !== -1 ||
+                    src.indexOf('users') !== -1 ||
+                    src.indexOf('metacriticuser') !== -1 ||
+                    src.indexOf('metacritic_user') !== -1
+                );
+            }
+
+            response.ratings.forEach(function(r) {
+                var src = (r.source || '').toLowerCase();
+                var val = parseRawScore(r.value);
+                var votes = r.votes ? parseInt(r.votes) : null;
+                if (val === null || isNaN(val)) return;
+
+                if (src.indexOf('tmdb') !== -1) {
+                    var tmdb10 = val > 10 ? (val / 10) : val;
+                    res.tmdb_display = tmdb10.toFixed(1);
+                    res.tmdb_for_avg = tmdb10;
+                    res.tmdb_votes = votes;
+                }
+
+                if (src.indexOf('imdb') !== -1) {
+                    var imdb10 = val > 10 ? (val / 10) : val;
+                    res.imdb_display = imdb10.toFixed(1);
+                    res.imdb_for_avg = imdb10;
+                    res.imdb_votes = votes;
+                }
+
+                if (src.indexOf('metacritic') !== -1 && isUserSource(src)) {
+                    var user10 = val > 10 ? (val / 10) : val;
+                    res.mc_user_display = user10.toFixed(1);
+                    res.mc_user_for_avg = user10;
+                    res.mc_user_votes = votes;
+                }
+
+                if (src.indexOf('metacritic') !== -1 && !isUserSource(src)) {
+                    var critic10 = val > 10 ? (val / 10) : val;
+                    res.mc_critic_display = critic10.toFixed(1);
+                    res.mc_critic_for_avg = critic10;
+                    res.mc_critic_votes = votes;
+                }
+
+                if (src.indexOf('rotten') !== -1 || src.indexOf('tomato') !== -1) {
+                    res.rt_display = String(Math.round(val));
+                    res.rt_for_avg = val / 10;
+                    res.rt_fresh = val >= 60;
+                    res.rt_votes = votes;
+                }
+
+                if (src.indexOf('popcorn') !== -1 || src.indexOf('audience') !== -1) {
+                    res.popcorn_display = String(Math.round(val));
+                    res.popcorn_for_avg = val / 10;
+                    res.popcorn_votes = votes;
+                }
+            });
+
+            res._mdblist_ratings = Array.isArray(response.ratings) ? response.ratings.slice() : [];
+            callback(res);
+        }
+    }
+
+    function fetchOmdbRatings(card, callback) {
+        var key = LMP_ENH_CONFIG.apiKeys.omdb;
+        if (!key || !card.imdb_id) {
+            callback(null);
+            return;
+        }
+        var typeParam = (card.type === 'tv') ? '&type=series' : '';
+        var url = 'https://www.omdbapi.com/?apikey=' + encodeURIComponent(key) + '&i=' + encodeURIComponent(card.imdb_id) + typeParam;
+
+        new Lampa.Reguest().silent(url, function(data) {
+            if (!data || data.Response !== 'True') {
+                callback(null);
+                return;
+            }
+            var awardsParsed = parseAwards(data.Awards || '');
+            var rtScore = null;
+            var mcScore = null;
+            var rtVotes = null;
+            var mcVotes = null;
+
+            if (Array.isArray(data.Ratings)) {
+                data.Ratings.forEach(function(r) {
+                    if (r.Source === 'Rotten Tomatoes') {
+                        var v = parseInt((r.Value || '').replace('%', ''));
+                        if (!isNaN(v)) rtScore = v;
+                    }
+                    if (r.Source === 'Metacritic') {
+                        var m = parseInt((r.Value || '').split('/')[0]);
+                        if (!isNaN(m)) mcScore = m;
+                    }
+                });
+            }
+
+            var mc10 = (mcScore !== null && !isNaN(mcScore)) ? (mcScore > 10 ? mcScore / 10 : mcScore) : null;
+
+            var res = {
+                tmdb_display: null, tmdb_for_avg: null, tmdb_votes: null,
+                imdb_display: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating).toFixed(1) : null,
+                imdb_for_avg: data.imdbRating && data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
+                imdb_votes: data.imdbVotes && data.imdbVotes !== 'N/A' ? parseInt(data.imdbVotes.replace(/,/g, '')) : null,
+                mc_user_display: null, mc_user_for_avg: null, mc_user_votes: null,
+                mc_critic_display: (mc10 !== null ? mc10.toFixed(1) : null),
+                mc_critic_for_avg: (mc10 !== null ? mc10 : null),
+                mc_critic_votes: mcVotes,
+                rt_display: (rtScore !== null && !isNaN(rtScore)) ? String(rtScore) : null,
+                rt_for_avg: (rtScore !== null && !isNaN(rtScore)) ? (rtScore / 10) : null,
+                rt_fresh: (rtScore !== null && !isNaN(rtScore)) ? (rtScore >= 60) : null,
+                rt_votes: rtVotes,
+                popcorn_display: null, popcorn_for_avg: null, popcorn_votes: null,
+                ageRating: data.Rated || null,
+                oscars: awardsParsed.oscars || 0,
+                emmy: awardsParsed.emmy || 0,
+                awards: awardsParsed.awards || 0
+            };
+            callback(res);
+        }, function() { callback(null); });
+    }
+
+    function mergeRatings(mdb, omdb) {
+        mdb = mdb || {};
+        omdb = omdb || {};
+
+        var mc_display = null;
+        var mc_for_avg = null;
+        var mc_votes = null;
+
+        if (mdb.mc_user_display) {
+            mc_display = mdb.mc_user_display;
+            mc_for_avg = mdb.mc_user_for_avg;
+            mc_votes = mdb.mc_user_votes;
+        } else if (mdb.mc_critic_display) {
+            mc_display = mdb.mc_critic_display;
+            mc_for_avg = mdb.mc_critic_for_avg;
+            mc_votes = mdb.mc_critic_votes;
+        } else if (omdb.mc_critic_display) {
+            mc_display = omdb.mc_critic_display;
+            mc_for_avg = omdb.mc_critic_for_avg;
+            mc_votes = omdb.mc_critic_votes;
+        }
+
+        var merged = {
+            tmdb_display: mdb.tmdb_display || null,
+            tmdb_for_avg: mdb.tmdb_for_avg || null,
+            tmdb_votes: mdb.tmdb_votes || null,
+            imdb_display: mdb.imdb_display || omdb.imdb_display || null,
+            imdb_for_avg: mdb.imdb_for_avg || omdb.imdb_for_avg || null,
+            imdb_votes: mdb.imdb_votes || omdb.imdb_votes || null,
+            mc_user_display: mdb.mc_user_display || null,
+            mc_user_for_avg: (typeof mdb.mc_user_for_avg === 'number' ? mdb.mc_user_for_avg : null),
+            mc_user_votes: mdb.mc_user_votes || null,
+            mc_critic_display: mdb.mc_critic_display || omdb.mc_critic_display || null,
+            mc_critic_for_avg: (typeof mdb.mc_critic_for_avg === 'number' ? mdb.mc_critic_for_avg : (typeof omdb.mc_critic_for_avg === 'number' ? omdb.mc_critic_for_avg : null)),
+            mc_critic_votes: mdb.mc_critic_votes || omdb.mc_critic_votes || null,
+            mc_display: mc_display || null,
+            mc_for_avg: (typeof mc_for_avg === 'number' ? mc_for_avg : null),
+            mc_votes: mc_votes || null,
+            rt_display: mdb.rt_display || omdb.rt_display || null,
+            rt_for_avg: mdb.rt_for_avg || omdb.rt_for_avg || null,
+            rt_fresh: (mdb.rt_display || omdb.rt_display) ? (mdb.rt_display ? mdb.rt_fresh : omdb.rt_fresh) : null,
+            rt_votes: mdb.rt_votes || omdb.rt_votes || null,
+            popcorn_display: mdb.popcorn_display || null,
+            popcorn_for_avg: mdb.popcorn_for_avg || null,
+            popcorn_votes: mdb.popcorn_votes || null,
+            ageRating: omdb.ageRating || null,
+            oscars: omdb.oscars || 0,
+            emmy: omdb.emmy || 0,
+            awards: omdb.awards || 0,
+            _mdblist_ratings: Array.isArray(mdb._mdblist_ratings) ? mdb._mdblist_ratings.slice() : []
+        };
+
+        return merged;
+    }
+
+    function removePosterBadges(root) {
+        var host = (root || document).querySelectorAll('.card__lmerating');
+        host.forEach(function(x) {
+            x.parentNode && x.parentNode.removeChild(x);
         });
-      }
+    }
 
-      var res = {
-        imdb_display: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating).toFixed(1) : null,
-        imdb_for_avg: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
-        imdb_votes: data.imdbVotes !== 'N/A' ? parseInt(data.imdbVotes.replace(/,/g, '')) : null,
-        mc_critic_display: mcScore ? (mcScore / 10).toFixed(1) : null,
-        mc_critic_for_avg: mcScore ? (mcScore / 10) : null,
-        rt_display: rtScore ? rtScore.toString() : null,
-        rt_for_avg: rtScore ? rtScore / 10 : null,
-        rt_fresh: rtScore ? rtScore >= 60 : null,
-        ageRating: data.Rated !== 'N/A' ? data.Rated : null,
-        oscars: awardsParsed.oscars,
-        emmy: awardsParsed.emmy,
-        awards: awardsParsed.awards
-      };
+    function renderPosterBadgesOnDetails(data, renderRoot) {
+        var cfg = getCfg();
+        if (!cfg.enablePosterBadges) {
+            removePosterBadges(renderRoot && renderRoot[0]);
+            return;
+        }
 
-      callback(res);
-    }, function() {
-      apiErrorToast('OMDb', 'network');
-      callback(null);
-    });
-  }
-    // Запуск плагіну
-  Lampa.Template.add('lmp_enh_styles', pluginStyles);
-  $('body').append(Lampa.Template.get('lmp_enh_styles', {}, true));
+        var $render = renderRoot || (Lampa.Activity.active().activity.render && Lampa.Activity.active().activity.render());
+        if (!$render || !$render.length) return;
 
-  initRatingsPluginUI();
-  refreshConfigFromStorage();
+        var $poster = $('.full-start-new__poster, .full-start__poster', $render).first();
+        if (!$poster.length) return;
+        $poster.find('.card__lmerating').remove();
 
-  window.addEventListener('resize', reapplyOnResize);
-  window.addEventListener('orientationchange', reapplyOnResize);
+        var raw = buildMdblistLikeArray(data);
+        var items = filterMdblistLike(raw);
+        if (!items.length) return;
 
-  if (!window.combined_ratings_plugin) {
-    startPlugin();
-  }
+        var topStartEm = 0.8;
+        var stepEm = 2.0;
 
+        items.forEach(function(it, i) {
+            var $b = $('<div class="card__lmerating"></div>');
+            var txt = String(it.source || '').toUpperCase() + ': ' + String(it.value);
+            if (it.votes && cfg.showVotes) {
+                txt += ' <span class="votes-badge">(' + formatVotes(it.votes) + ' ' + Lampa.Lang.translate('votes_label') + ')</span>';
+            }
+            $b.css('top', 'calc(' + topStartEm + 'em + ' + (i * stepEm) + 'em)').html(txt);
+            $poster.append($b);
+        });
+    }
+
+    function renderPosterBadgesFromRaw(rawRatings, $cardView) {
+        if (!$cardView || !$cardView.length) return;
+        $cardView.find('.card__lmerating').remove();
+        var items = filterMdblistLike(rawRatings);
+        if (!items.length) return;
+
+        var cfg = getCfg();
+        var topStartEm = 0.6, stepEm = 2.0;
+        items.forEach(function(it, i) {
+            var val = lmpRawVal(it);
+            if (val == null) return;
+            var txt = String((it.source || '').toUpperCase()) + ': ' + String(val);
+            if (it.votes && cfg.showVotes) {
+                txt += ' <span class="votes-badge">(' + formatVotes(it.votes) + ' ' + Lampa.Lang.translate('votes_label') + ')</span>';
+            }
+            var $b = $('<div class="card__lmerating"></div>');
+            $b.css('top', 'calc(' + topStartEm + 'em + ' + (i * stepEm) + 'em)').html(txt);
+            $cardView.append($b);
+        });
+    }
+
+    function updateHiddenElements(data) {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render || !render[0]) return;
+        var cfg = getCfg();
+
+        var pgElement = $('.full-start__pg.hide', render);
+        if (pgElement.length && data.ageRating) {
+            var invalidRatings = ['N/A', 'Not Rated', 'Unrated'];
+            var isValid = invalidRatings.indexOf(data.ageRating) === -1;
+            if (isValid) {
+                var localized = AGE_RATINGS[data.ageRating] || data.ageRating;
+                pgElement.removeClass('hide').text(localized);
+            }
+        }
+
+        var imdbContainer = $('.rate--imdb', render);
+        if (imdbContainer.length) {
+            if (!cfg.enableImdb || !data.imdb_display) {
+                imdbContainer.addClass('hide')
+                    .removeClass('rating--green rating--blue rating--orange rating--red');
+            } else {
+                imdbContainer.removeClass('hide');
+                var imdbDivs = imdbContainer.find('> div');
+                if (imdbDivs.length >= 2) {
+                    var votesHtml = '';
+                    if (cfg.showVotes && data.imdb_votes) {
+                        votesHtml = '<span class="votes-count">(' + formatVotes(data.imdb_votes) + ')</span>';
+                    }
+                    imdbDivs.eq(0).html(parseFloat(data.imdb_display).toFixed(1) + votesHtml);
+                    imdbDivs.eq(1).addClass('source--name').html(iconImg(ICONS.imdb, 'IMDb', 22));
+                }
+                imdbContainer.removeClass('rating--green rating--blue rating--orange rating--red');
+                if (cfg.colorizeAll && data.imdb_for_avg && !isNaN(data.imdb_for_avg)) {
+                    imdbContainer.addClass(getRatingClass(parseFloat(data.imdb_for_avg)));
+                }
+            }
+        }
+
+        var tmdbContainer = $('.rate--tmdb', render);
+        if (tmdbContainer.length) {
+            if (!cfg.enableTmdb || !data.tmdb_display) {
+                tmdbContainer.addClass('hide')
+                    .removeClass('rating--green rating--blue rating--orange rating--red');
+            } else {
+                var tmdbDivs = tmdbContainer.find('> div');
+                if (tmdbDivs.length >= 2) {
+                    var votesHtml = '';
+                    if (cfg.showVotes && data.tmdb_votes) {
+                        votesHtml = '<span class="votes-count">(' + formatVotes(data.tmdb_votes) + ')</span>';
+                    }
+                    tmdbDivs.eq(0).html(parseFloat(data.tmdb_display).toFixed(1) + votesHtml);
+                    tmdbDivs.eq(1).addClass('source--name').html(iconImg(ICONS.tmdb, 'TMDB', 24));
+                }
+                tmdbContainer.removeClass('hide rating--green rating--blue rating--orange rating--red');
+                if (cfg.colorizeAll && data.tmdb_for_avg && !isNaN(data.tmdb_for_avg)) {
+                    tmdbContainer.addClass(getRatingClass(parseFloat(data.tmdb_for_avg)));
+                }
+            }
+        }
+    }
+
+    function applyAwardsColor(rateLine, cfg) {
+        var $tiles = rateLine.find('.rate--awards, .rate--oscars, .rate--emmy');
+        $tiles.removeClass('rating--green rating--blue rating--orange rating--red');
+        if (cfg && cfg.colorizeAll) {
+            $tiles.addClass('rate--gold');
+        } else {
+            $tiles.removeClass('rate--gold');
+        }
+    }
+
+    function insertRatings(data) {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render) return;
+        cleanupRtgInjected(render);
+        var rateLine = getPrimaryRateLine(render);
+        if (!rateLine.length) return;
+
+        var cfg = getCfg();
+
+        // Metacritic
+        (function() {
+            var cont = $('.rate--mc', rateLine);
+            if (!cfg.enableMc) {
+                cont.remove();
+                return;
+            }
+
+            var mcVal = null;
+            var mcVotes = null;
+            if (data.mc_user_for_avg && !isNaN(data.mc_user_for_avg)) {
+                mcVal = parseFloat(data.mc_user_for_avg);
+                mcVotes = data.mc_user_votes;
+            } else if (data.mc_critic_for_avg && !isNaN(data.mc_critic_for_avg)) {
+                mcVal = parseFloat(data.mc_critic_for_avg);
+                mcVotes = data.mc_critic_votes;
+            } else if (data.mc_for_avg && !isNaN(data.mc_for_avg)) {
+                mcVal = parseFloat(data.mc_for_avg);
+                mcVotes = data.mc_votes;
+            } else if (data.mc_display && !isNaN(parseFloat(data.mc_display))) {
+                var md = parseFloat(data.mc_display);
+                mcVal = (md > 10) ? (md / 10) : md;
+                mcVotes = data.mc_votes;
+            }
+
+            if (mcVal == null || isNaN(mcVal)) {
+                cont.remove();
+                return;
+            }
+
+            var mcText = mcVal.toFixed(1);
+            var usedIsUser = (data.mc_user_for_avg && !isNaN(data.mc_user_for_avg)) && Math.abs(mcVal - parseFloat(data.mc_user_for_avg)) < 0.051;
+            var usedIsCritic = !usedIsUser && (data.mc_critic_for_avg && !isNaN(data.mc_critic_for_avg)) && Math.abs(mcVal - parseFloat(data.mc_critic_for_avg)) < 0.051;
+            var mcIconUrl = ICONS.metascore;
+            if (usedIsUser) mcIconUrl = ICONS.metacritic;
+            if (usedIsCritic) mcIconUrl = ICONS.metascore;
+
+            if (!cont.length) {
+                cont = $(
+                    '<div class="full-start__rate rate--mc">' +
+                    '<div>' + mcText + '</div>' +
+                    '<div class="source--name"></div>' +
+                    '</div>'
+                );
+                cont.find('.source--name').html(iconImg(mcIconUrl, 'Metacritic', 22));
+                var afterImdb = $('.rate--imdb', rateLine);
+                if (afterImdb.length) cont.insertAfter(afterImdb);
+                else rateLine.append(cont);
+            } else {
+                cont.find('> div').eq(0).text(mcText);
+                cont.find('.source--name').html(iconImg(mcIconUrl, 'Metacritic', 22));
+            }
+
+            if (cfg.showVotes && mcVotes) {
+                var $firstDiv = cont.find('> div').eq(0);
+                var votesHtml = '<span class="votes-count">(' + formatVotes(mcVotes) + ')</span>';
+                if (!$firstDiv.find('.votes-count').length) {
+                    $firstDiv.append(votesHtml);
+                }
+            }
+
+            cont.removeClass('rating--green rating--blue rating--orange rating--red');
+            if (cfg.colorizeAll) cont.addClass(getRatingClass(mcVal));
+        })();
+
+        // Rotten Tomatoes
+        (function() {
+            var cont = $('.rate--rt', rateLine);
+            if (!cfg.enableRt) {
+                cont.remove();
+                return;
+            }
+
+            var rtVal = null;
+            var rtVotes = data.rt_votes;
+            if (data.rt_for_avg && !isNaN(data.rt_for_avg)) rtVal = parseFloat(data.rt_for_avg);
+            else if (data.rt_display && !isNaN(parseFloat(data.rt_display))) {
+                var rtd = parseFloat(data.rt_display);
+                rtVal = (rtd > 10) ? (rtd / 10) : rtd;
+            }
+
+            if (rtVal == null || isNaN(rtVal)) {
+                cont.remove();
+                return;
+            }
+
+            var rtText = rtVal.toFixed(1);
+            var rtIconUrl = data.rt_fresh ? ICONS.rotten_good : ICONS.rotten_bad;
+            var extra = data.rt_fresh ? 'border-radius:4px;' : '';
+
+            if (!cont.length) {
+                cont = $(
+                    '<div class="full-start__rate rate--rt">' +
+                    '<div>' + rtText + '</div>' +
+                    '<div class="source--name"></div>' +
+                    '</div>'
+                );
+                cont.find('.source--name').html(iconImg(rtIconUrl, 'Rotten Tomatoes', 22, extra));
+                var afterMc = $('.rate--mc', rateLine);
+                if (afterMc.length) cont.insertAfter(afterMc);
+                else {
+                    var afterImdb2 = $('.rate--imdb', rateLine);
+                    if (afterImdb2.length) cont.insertAfter(afterImdb2);
+                    else rateLine.prepend(cont);
+                }
+            } else {
+                cont.find('> div').eq(0).text(rtText);
+                cont.find('.source--name').html(iconImg(rtIconUrl, 'Rotten Tomatoes', 22, extra));
+            }
+
+            if (cfg.showVotes && rtVotes) {
+                var $firstDiv = cont.find('> div').eq(0);
+                var votesHtml = '<span class="votes-count">(' + formatVotes(rtVotes) + ')</span>';
+                if (!$firstDiv.find('.votes-count').length) {
+                    $firstDiv.append(votesHtml);
+                }
+            }
+
+            cont.removeClass('rating--green rating--blue rating--orange rating--red');
+            if (cfg.colorizeAll) cont.addClass(getRatingClass(rtVal));
+        })();
+
+        // Popcorn
+        (function() {
+            var cont = $('.rate--popcorn', rateLine);
+            if (!cfg.enablePop) {
+                cont.remove();
+                return;
+            }
+
+            var pcVal = null;
+            var pcVotes = data.popcorn_votes;
+            if (data.popcorn_for_avg && !isNaN(data.popcorn_for_avg)) pcVal = parseFloat(data.popcorn_for_avg);
+            else if (data.popcorn_display && !isNaN(parseFloat(data.popcorn_display))) {
+                var pcd = parseFloat(data.popcorn_display);
+                pcVal = (pcd > 10) ? (pcd / 10) : pcd;
+            }
+
+            if (pcVal == null || isNaN(pcVal)) {
+                cont.remove();
+                return;
+            }
+
+            var pcText = pcVal.toFixed(1);
+
+            if (!cont.length) {
+                cont = $(
+                    '<div class="full-start__rate rate--popcorn">' +
+                    '<div>' + pcText + '</div>' +
+                    '<div class="source--name"></div>' +
+                    '</div>'
+                );
+                cont.find('.source--name').html(iconImg(ICONS.popcorn, 'Audience', 22));
+                var anchors = rateLine.find('.rate--rt, .rate--mc, .rate--tmdb, .rate--imdb');
+                if (anchors.length) cont.insertAfter(anchors.last());
+                else rateLine.prepend(cont);
+            } else {
+                cont.find('> div').eq(0).text(pcText);
+                cont.find('.source--name').html(iconImg(ICONS.popcorn, 'Audience', 22));
+            }
+
+            if (cfg.showVotes && pcVotes) {
+                var $firstDiv = cont.find('> div').eq(0);
+                var votesHtml = '<span class="votes-count">(' + formatVotes(pcVotes) + ')</span>';
+                if (!$firstDiv.find('.votes-count').length) {
+                    $firstDiv.append(votesHtml);
+                }
+            }
+
+            cont.removeClass('rating--green rating--blue rating--orange rating--red');
+            if (cfg.colorizeAll) cont.addClass(getRatingClass(pcVal));
+        })();
+
+        if (data.awards && data.awards > 0 && !$('.rate--awards', rateLine).length) {
+            var awardsElement = $(
+                '<div class="full-start__rate rate--awards rate--gold">' +
+                '<div>' + data.awards + '</div>' +
+                '<div class="source--name"></div>' +
+                '</div>'
+            );
+            awardsElement.find('.source--name')
+                .html(iconImg(ICONS.awards, 'Awards', 20))
+                .attr('title', Lampa.Lang.translate('awards_other_label'));
+            rateLine.prepend(awardsElement);
+        }
+
+        if (data.emmy && data.emmy > 0 && !$('.rate--emmy', rateLine).length) {
+            var emmyElement = $(
+                '<div class="full-start__rate rate--emmy rate--gold">' +
+                '<div>' + data.emmy + '</div>' +
+                '<div class="source--name"></div>' +
+                '</div>'
+            );
+            emmyElement.find('.source--name')
+                .html(emmyIconInline())
+                .attr('title', Lampa.Lang.translate('emmy_label'));
+            rateLine.prepend(emmyElement);
+        }
+
+        if (data.oscars && data.oscars > 0 && !$('.rate--oscars', rateLine).length) {
+            var oscarsElement = $(
+                '<div class="full-start__rate rate--oscars rate--gold">' +
+                '<div>' + data.oscars + '</div>' +
+                '<div class="source--name"></div>' +
+                '</div>'
+            );
+            oscarsElement.find('.source--name')
+                .html(oscarIconInline())
+                .attr('title', Lampa.Lang.translate('oscars_label'));
+            rateLine.prepend(oscarsElement);
+        }
+
+        try { applyAwardsColor(rateLine, cfg); } catch (e) {}
+    }
+
+    function calculateAverageRating(data) {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render) return;
+        var rateLine = getPrimaryRateLine(render);
+        if (!rateLine.length) return;
+
+        var cfg = getCfg();
+
+        $('.rate--avg', rateLine).remove();
+        if (!cfg.showAverage) {
+            try { applyAwardsColor(rateLine, cfg); } catch (e) {}
+            removeLoadingAnimation();
+            undimRateLine(rateLine);
+            return;
+        }
+
+        var parts = [];
+        if (cfg.enableTmdb && data.tmdb_for_avg && !isNaN(data.tmdb_for_avg)) parts.push(parseFloat(data.tmdb_for_avg));
+        if (cfg.enableImdb && data.imdb_for_avg && !isNaN(data.imdb_for_avg)) parts.push(parseFloat(data.imdb_for_avg));
+        if (cfg.enableMc) {
+            if (data.mc_user_for_avg && !isNaN(data.mc_user_for_avg)) {
+                parts.push(parseFloat(data.mc_user_for_avg));
+            } else if (data.mc_critic_for_avg && !isNaN(data.mc_critic_for_avg)) {
+                parts.push(parseFloat(data.mc_critic_for_avg));
+            } else if (data.mc_for_avg && !isNaN(data.mc_for_avg)) {
+                parts.push(parseFloat(data.mc_for_avg));
+            }
+        }
+        if (cfg.enableRt && data.rt_for_avg && !isNaN(data.rt_for_avg)) parts.push(parseFloat(data.rt_for_avg));
+        if (cfg.enablePop && data.popcorn_for_avg && !isNaN(data.popcorn_for_avg)) parts.push(parseFloat(data.popcorn_for_avg));
+
+        if (!parts.length) {
+            removeLoadingAnimation();
+            undimRateLine(rateLine);
+            return;
+        }
+
+        var sum = 0;
+        for (var i = 0; i < parts.length; i++) sum += parts[i];
+        var avg = sum / parts.length;
+        var colorClass = cfg.colorizeAll ? getRatingClass(avg) : '';
+
+        var avgElement = $(
+            '<div class="full-start__rate rate--avg ' + colorClass + '">' +
+            '<div>' + avg.toFixed(1) + '</div>' +
+            '<div class="source--name"></div>' +
+            '</div>'
+        );
+        var starHtml = iconImg(ICONS.total_star, 'AVG', 20);
+        avgElement.find('.source--name').html(starHtml);
+
+        var firstRate = $('.full-start__rate:first', rateLine);
+        if (firstRate.length) firstRate.before(avgElement);
+        else rateLine.prepend(avgElement);
+
+        try { applyAwardsColor(rateLine, cfg); } catch (e) {}
+        removeLoadingAnimation();
+        undimRateLine(rateLine);
+    }
+
+    function fetchAdditionalRatings(card) {
+        var render = Lampa.Activity.active().activity.render();
+        if (!render) return;
+        refreshConfigFromStorage();
+
+        var normalizedCard = {
+            id: card.id,
+            imdb_id: card.imdb_id || card.imdb || null,
+            title: card.title || card.name || '',
+            original_title: card.original_title || card.original_name || '',
+            type: getCardType(card),
+            release_date: card.release_date || card.first_air_date || '',
+            vote: card.vote_average || card.vote || null
+        };
+
+        var cardKeyForToken = (normalizedCard.type || getCardType(normalizedCard)) + '_' + (normalizedCard.imdb_id || normalizedCard.id || '');
+        var reqToken = cardKeyForToken + '_' + Date.now();
+        __lmpLastReqToken = reqToken;
+
+        function renderAll() {
+            if (reqToken !== __lmpLastReqToken) return;
+            if (!currentRatingsData) {
+                removeLoadingAnimation();
+                return;
+            }
+            updateHiddenElements(currentRatingsData);
+            insertRatings(currentRatingsData);
+            calculateAverageRating(currentRatingsData);
+            try { renderPosterBadgesOnDetails(currentRatingsData); } catch (e) {}
+            applyStylesToAll();
+        }
+
+        function proceedWithImdbId() {
+            var cacheKeyBase = normalizedCard.imdb_id || normalizedCard.id;
+            var cacheKey = cacheKeyBase ? (normalizedCard.type + '_' + cacheKeyBase) : null;
+            var cached = cacheKey ? getCachedRatings(cacheKey) : null;
+            if (cached) {
+                currentRatingsData = cached;
+                renderAll();
+                return;
+            }
+
+            addLoadingAnimation();
+
+            var pending = 2;
+            var mdbRes = null;
+            var omdbRes = null;
+
+            function oneDone() {
+                pending--;
+                if (pending !== 0) return;
+                currentRatingsData = mergeRatings(mdbRes, omdbRes);
+                if (
+                    (!currentRatingsData.tmdb_display || !currentRatingsData.tmdb_for_avg) &&
+                    normalizedCard.vote != null
+                ) {
+                    var tm = parseFloat(normalizedCard.vote);
+                    if (!isNaN(tm)) {
+                        if (tm > 10) tm = tm / 10;
+                        if (tm < 0) tm = 0;
+                        if (tm > 10) tm = 10;
+                        currentRatingsData.tmdb_for_avg = tm;
+                        currentRatingsData.tmdb_display = tm.toFixed(1);
+                    }
+                }
+
+                if (
+                    cacheKey && currentRatingsData && (
+                        currentRatingsData.tmdb_display ||
+                        currentRatingsData.imdb_display ||
+                        currentRatingsData.mc_display ||
+                        currentRatingsData.rt_display ||
+                        currentRatingsData.popcorn_display ||
+                        currentRatingsData.oscars ||
+                        currentRatingsData.emmy ||
+                        currentRatingsData.awards
+                    )
+                ) {
+                    saveCachedRatings(cacheKey, currentRatingsData);
+                }
+
+                renderAll();
+            }
+
+            fetchMdbListRatings(normalizedCard, function(r1) {
+                mdbRes = r1 || {};
+                oneDone();
+            });
+
+            fetchOmdbRatings(normalizedCard, function(r2) {
+                omdbRes = r2 || {};
+                oneDone();
+            });
+        }
+
+        if (!normalizedCard.imdb_id) {
+            getImdbIdFromTmdb(normalizedCard.id, normalizedCard.type, function(imdb_id) {
+                normalizedCard.imdb_id = imdb_id;
+                proceedWithImdbId();
+            });
+        } else {
+            proceedWithImdbId();
+        }
+    }
+
+    function getCfg() {
+        var omdbKey = Lampa.Storage.get('ratings_omdb_key', RCFG_DEFAULT.ratings_omdb_key);
+        var mdblistKey = Lampa.Storage.get('ratings_mdblist_key', RCFG_DEFAULT.ratings_mdblist_key);
+        var bwLogos = !!Lampa.Storage.field('ratings_bw_logos', RCFG_DEFAULT.ratings_bw_logos);
+        var showAwards = !!Lampa.Storage.field('ratings_show_awards', RCFG_DEFAULT.ratings_show_awards);
+        var showAverage = !!Lampa.Storage.field('ratings_show_average', RCFG_DEFAULT.ratings_show_average);
+        var logoOffset = parseInt(Lampa.Storage.get('ratings_logo_offset', RCFG_DEFAULT.ratings_logo_offset), 10);
+        if (isNaN(logoOffset)) logoOffset = 0;
+        var fontOffset = parseInt(Lampa.Storage.get('ratings_font_offset', RCFG_DEFAULT.ratings_font_offset), 10);
+        if (isNaN(fontOffset)) fontOffset = 0;
+        var badgeAlpha = parseFloat(Lampa.Storage.get('ratings_badge_alpha', RCFG_DEFAULT.ratings_badge_alpha));
+        if (isNaN(badgeAlpha)) badgeAlpha = RCFG_DEFAULT.ratings_badge_alpha;
+        if (badgeAlpha < 0) badgeAlpha = 0;
+        if (badgeAlpha > 1) badgeAlpha = 1;
+        var badgeTone = parseInt(Lampa.Storage.get('ratings_badge_tone', RCFG_DEFAULT.ratings_badge_tone), 10);
+        if (isNaN(badgeTone)) badgeTone = RCFG_DEFAULT.ratings_badge_tone;
+        if (badgeTone < 0) badgeTone = 0;
+        if (badgeTone > 255) badgeTone = 255;
+        var gapStep = parseInt(Lampa.Storage.get('ratings_gap_step', RCFG_DEFAULT.ratings_gap_step), 10);
+        if (isNaN(gapStep) || gapStep < 0) gapStep = 0;
+        var colorizeAll = !!Lampa.Storage.field('ratings_colorize_all', RCFG_DEFAULT.ratings_colorize_all);
+        var enIMDB = !!Lampa.Storage.field('ratings_enable_imdb', RCFG_DEFAULT.ratings_enable_imdb);
+        var enTMDB = !!Lampa.Storage.field('ratings_enable_tmdb', RCFG_DEFAULT.ratings_enable_tmdb);
+        var enMC = !!Lampa.Storage.field('ratings_enable_mc', RCFG_DEFAULT.ratings_enable_mc);
+        var enRT = !!Lampa.Storage.field('ratings_enable_rt', RCFG_DEFAULT.ratings_enable_rt);
+        var enPopcorn = !!Lampa.Storage.field('ratings_enable_popcorn', RCFG_DEFAULT.ratings_enable_popcorn);
+        var posterBadges = !!Lampa.Storage.field('ratings_poster_badges', RCFG_DEFAULT.ratings_poster_badges);
+        var rateBorder = !!Lampa.Storage.field('ratings_rate_border', RCFG_DEFAULT.ratings_rate_border);
+        var showVotes = !!Lampa.Storage.field('ratings_show_votes', RCFG_DEFAULT.ratings_show_votes);
+
+        return {
+            omdbKey: omdbKey || '',
+            mdblistKey: mdblistKey || '',
+            bwLogos: bwLogos,
+            showAwards: showAwards,
+            showAverage: showAverage,
+            logoOffset: logoOffset,
+            fontOffset: fontOffset,
+            badgeAlpha: badgeAlpha,
+            badgeTone: badgeTone,
+            gapStep: gapStep,
+            colorizeAll: colorizeAll,
+            enableImdb: enIMDB,
+            enableTmdb: enTMDB,
+            enableMc: enMC,
+            enableRt: enRT,
+            enablePop: enPopcorn,
+            enablePosterBadges: posterBadges,
+            rateBorder: rateBorder,
+            showVotes: showVotes
+        };
+    }
+
+    function refreshConfigFromStorage() {
+        var cfg = getCfg();
+        LMP_ENH_CONFIG.apiKeys.omdb = cfg.omdbKey || '';
+        LMP_ENH_CONFIG.apiKeys.mdblist = cfg.mdblistKey || '';
+        LMP_ENH_CONFIG.monochromeIcons = cfg.bwLogos;
+
+        if (cfg.bwLogos) {
+            $('body').addClass('lmp-enh--mono');
+        } else {
+            $('body').removeClass('lmp-enh--mono');
+        }
+
+        if (cfg.showVotes) {
+            $('body').addClass('lmp-enh--show-votes');
+        } else {
+            $('body').removeClass('lmp-enh--show-votes');
+        }
+
+        return cfg;
+    }
+
+    function toggleAwards(showAwards) {
+        var nodes = document.querySelectorAll('.rate--oscars, .rate--emmy, .rate--awards');
+        nodes.forEach(function(n) {
+            n.style.display = showAwards ? '' : 'none';
+        });
+    }
+
+    function toggleAverage(showAverage) {
+        var nodes = document.querySelectorAll('.rate--avg');
+        nodes.forEach(function(n) {
+            n.style.display = showAverage ? '' : 'none';
+        });
+    }
+
+    function tuneRatingFont(offsetPx) {
+        var off = parseFloat(offsetPx) || 0;
+        var tiles = document.querySelectorAll('.full-start__rate');
+        tiles.forEach(function(tile) {
+            var prev = tile.style.fontSize;
+            tile.style.fontSize = '';
+            var basePx = parseFloat(getComputedStyle(tile).fontSize);
+            if (isNaN(basePx)) basePx = 23;
+            var finalPx = Math.max(1, basePx + off);
+            tile.style.fontSize = finalPx + 'px';
+        });
+    }
+
+    function tuneLogos(offsetPx) {
+        var REF_BASE = 28;
+        var scale = (REF_BASE + (parseFloat(offsetPx) || 0)) / REF_BASE;
+        if (scale < 0.1) scale = 0.1;
+        var logos = document.querySelectorAll(
+            '.full-start__rate .source--name img,' +
+            '.rate--imdb > div:nth-child(2) img,' +
+            '.rate--tmdb > div:nth-child(2) img,' +
+            '.lmp-award-icon img'
+        );
+
+        function cssVarPx(name) {
+            if (!name) return null;
+            var raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+            var n = parseFloat(raw);
+            return isNaN(n) ? null : n;
+        }
+
+        logos.forEach(function(img) {
+            var varName = null;
+            if (img.closest('.rate--imdb')) varName = '--lmp-h-imdb';
+            else if (img.closest('.rate--tmdb')) varName = '--lmp-h-tmdb';
+            else if (img.closest('.rate--mc')) varName = '--lmp-h-mc';
+            else if (img.closest('.rate--rt')) varName = '--lmp-h-rt';
+            else if (img.closest('.rate--popcorn')) varName = '--lmp-h-popcorn';
+            else if (img.closest('.rate--awards')) varName = '--lmp-h-awards';
+            else if (img.closest('.rate--avg')) varName = '--lmp-h-avg';
+            else if (img.closest('.rate--oscars') || img.closest('.lmp-award-icon--oscar')) varName = '--lmp-h-oscar';
+            else if (img.closest('.rate--emmy') || img.closest('.lmp-award-icon--emmy')) varName = '--lmp-h-emmy';
+            var baseH = cssVarPx(varName);
+            if (!baseH || baseH <= 0) baseH = 24;
+            var finalH = Math.max(1, baseH * scale);
+            img.style.height = finalH + 'px';
+            img.style.maxHeight = finalH + 'px';
+        });
+    }
+
+    function tuneBadgeBackground(tone, alpha) {
+        var rgba = 'rgba(' + tone + ',' + tone + ',' + tone + ',' + alpha + ')';
+        var tiles = document.querySelectorAll('.full-start__rate');
+        tiles.forEach(function(tile) {
+            tile.style.background = rgba;
+            var firstDiv = tile.firstElementChild;
+            if (firstDiv) {
+                firstDiv.style.background = rgba;
+            }
+        });
+    }
+
+    function tuneGap(gapStep) {
+        var lines = document.querySelectorAll('.full-start-new__rate-line');
+        var totalEm = (0.3 + gapStep * 0.1);
+        lines.forEach(function(line) {
+            var kids = line.children;
+            for (var i = 0; i < kids.length; i++) {
+                var child = kids[i];
+                child.style.setProperty('margin-right', totalEm + 'em', 'important');
+            }
+            if (line.lastElementChild) {
+                line.lastElementChild.style.setProperty('margin-right', '0', 'important');
+            }
+        });
+    }
+
+    function applyBwLogos(enabled) {
+        var logos = document.querySelectorAll(
+            '.full-start__rate .source--name img,' +
+            '.rate--imdb > div:nth-child(2) img,' +
+            '.rate--tmdb > div:nth-child(2) img,' +
+            '.lmp-award-icon img'
+        );
+        var filterValue = enabled ? 'grayscale(100%)' : '';
+        logos.forEach(function(node) {
+            node.style.filter = filterValue;
+        });
+    }
+
+    function applyStylesToAll() {
+        var cfg = getCfg();
+
+        if (cfg.bwLogos) {
+            $('body').addClass('lmp-enh--mono');
+        } else {
+            $('body').removeClass('lmp-enh--mono');
+        }
+
+        if (cfg.showVotes) {
+            $('body').addClass('lmp-enh--show-votes');
+        } else {
+            $('body').removeClass('lmp-enh--show-votes');
+        }
+
+        if (cfg.rateBorder) $('body').addClass('lmp-enh--rate-border');
+        else $('body').removeClass('lmp-enh--rate-border');
+
+        toggleAwards(cfg.showAwards);
+        toggleAverage(cfg.showAverage);
+        tuneRatingFont(cfg.fontOffset);
+        tuneLogos(cfg.logoOffset);
+        tuneBadgeBackground(cfg.badgeTone, cfg.badgeAlpha);
+        tuneGap(cfg.gapStep);
+        applyBwLogos(cfg.bwLogos);
+    }
+
+    function patchStorageSetOnce() {
+        if (window.__lmpRatingsPatchedStorage) return;
+        window.__lmpRatingsPatchedStorage = true;
+        var _set = Lampa.Storage.set;
+        Lampa.Storage.set = function(k, v) {
+            var out = _set.apply(this, arguments);
+            if (typeof k === 'string' && k.indexOf('ratings_') === 0) {
+                setTimeout(function() { applyStylesToAll(); }, 0);
+            }
+            return out;
+        };
+    }
+
+    var reapplyOnResize = (function() {
+        var t;
+        return function() {
+            clearTimeout(t);
+            t = setTimeout(function() { applyStylesToAll(); }, 150);
+        };
+    })();
+
+    function ensureDefaultToggles() {
+        if (typeof Lampa.Storage.get('ratings_show_awards') === 'undefined') {
+            Lampa.Storage.set('ratings_show_awards', true);
+        }
+        if (typeof Lampa.Storage.get('ratings_show_average') === 'undefined') {
+            Lampa.Storage.set('ratings_show_average', true);
+        }
+        if (typeof Lampa.Storage.get('ratings_show_votes') === 'undefined') {
+            Lampa.Storage.set('ratings_show_votes', true);
+        }
+    }
+
+    function attachLiveSettingsHandlers() {
+        var scheduleApply = (function() {
+            var t;
+            return function() {
+                clearTimeout(t);
+                t = setTimeout(function() {
+                    try {
+                        if (typeof currentRatingsData === 'object' && currentRatingsData) {
+                            updateHiddenElements(currentRatingsData);
+                            insertRatings(currentRatingsData);
+                            calculateAverageRating(currentRatingsData);
+                        }
+                    } catch (e) {}
+                    applyStylesToAll();
+                    try { refreshPosterBadgesGrid(); } catch (e) {}
+                }, 150);
+            };
+        })();
+
+        function onDomChange(e) {
+            var t = e.target;
+            if (!t) return;
+            var n = (t.getAttribute('name') || t.getAttribute('data-name') || '');
+            if (n && n.indexOf('ratings_') === 0) scheduleApply();
+        }
+
+        document.addEventListener('input', onDomChange, true);
+        document.addEventListener('change', onDomChange, true);
+        document.addEventListener('click', function(e) {
+            var el = e.target.closest('[data-name^="ratings_"],[name^="ratings_"]');
+            if (el) scheduleApply();
+        }, true);
+        document.addEventListener('keyup', onDomChange, true);
+
+        try {
+            if (Lampa.SettingsApi && Lampa.SettingsApi.listener && Lampa.SettingsApi.listener.follow) {
+                Lampa.SettingsApi.listener.follow('change', function(ev) {
+                    if (ev && ev.name && ev.name.indexOf('ratings_') === 0) scheduleApply();
+                });
+            }
+        } catch (_) {}
+    }
+
+    function refreshPosterBadgesGrid() {
+        $('.card__view .card__lmerating').remove();
+        var cfg = getCfg();
+        if (!cfg.enablePosterBadges) return;
+        $('.card').each(function() {
+            var $card = $(this);
+            var $view = $card.find('.card__view');
+            var data = $card.data('card') || {};
+            var type = data.number_of_seasons ? 'tv' : 'movie';
+            var key = posterCacheKeyForCard({ id: data.id, type: type, imdb_id: data.imdb_id });
+            var cached = getCachedRatings(key);
+            if (cached && cached._mdblist_ratings) {
+                renderPosterBadgesFromRaw(cached._mdblist_ratings, $view);
+            }
+        });
+    }
+
+    function wirePosterBadgesListener() {
+        Lampa.Listener.follow('line', function(e) {
+            if (e.type !== 'append') return;
+            var cfg = getCfg();
+            if (!cfg.enablePosterBadges) {
+                e.items.forEach(function(it) {
+                    try { it.card.find('.card__view .card__lmerating').remove(); } catch (_) {}
+                });
+                return;
+            }
+            e.items.forEach(function(it) {
+                var data = it && it.data;
+                var $view = it && it.card && it.card.find('.card__view');
+                if (!data || !$view || !$view.length) return;
+                var type = data.number_of_seasons ? 'tv' : 'movie';
+                var key = posterCacheKeyForCard({ id: data.id, type: type, imdb_id: data.imdb_id });
+                var cached = getCachedRatings(key);
+                if (cached && cached._mdblist_ratings) {
+                    renderPosterBadgesFromRaw(cached._mdblist_ratings, $view);
+                    return;
+                }
+                fetchMdbListRatings({ id: data.id, type: type }, function(mdbRes) {
+                    if (mdbRes && mdbRes._mdblist_ratings) {
+                        saveCachedRatings(key, { _mdblist_ratings: mdbRes._mdblist_ratings });
+                        renderPosterBadgesFromRaw(mdbRes._mdblist_ratings, $view);
+                    }
+                });
+            });
+        });
+    }
+
+    function addSettingsSection() {
+        if (window.lmp_ratings_add_param_ready) return;
+        window.lmp_ratings_add_param_ready = true;
+
+        Lampa.SettingsApi.addComponent({
+            component: 'lmp_ratings',
+            name: 'Рейтинги',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" ' +
+                'fill="none" xmlns="http://www.w3.org/2000/svg">' +
+                '<path d="M12 3l3.09 6.26L22 10.27l-5 4.87L18.18 21 ' +
+                '12 17.77 5.82 21 7 15.14l-5-4.87 6.91-1.01L12 3z" ' +
+                'stroke="currentColor" stroke-width="2" ' +
+                'fill="none" stroke-linejoin="round" stroke-linecap="round"/>' +
+                '</svg>'
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_omdb_key',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_omdb_key
+            },
+            field: {
+                name: 'API ключ (OMDb)',
+                description: 'Введи свій ключ OMDb. Можна отримати на omdbapi.com'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_mdblist_key',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_mdblist_key
+            },
+            field: {
+                name: 'API ключ (MDBList)',
+                description: 'Введи свій ключ MDBList. Можна отримати на mdblist.com'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_bw_logos',
+                type: 'trigger',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_bw_logos
+            },
+            field: {
+                name: 'Монохромний режим (Ч/Б логотипи)',
+                description: 'Чорно-білі логотипи рейтингів'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_rate_border',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_rate_border
+            },
+            field: {
+                name: 'Рамка плиток рейтингів',
+                description: 'Додає рамку навколо кожної плитки (IMDb, Metacritic, Rotten, Popcorn, TMDB, AVG, Awards).'
+            },
+            onRender: function() {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_show_awards',
+                type: 'trigger',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_show_awards
+            },
+            field: {
+                name: 'Нагороди',
+                description: 'Показувати Оскари, Еммі та інші нагороди.'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_show_average',
+                type: 'trigger',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_show_average
+            },
+            field: {
+                name: 'Середній рейтинг',
+                description: 'Показувати середній рейтинг'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_show_votes',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_show_votes
+            },
+            field: {
+                name: 'Кількість голосів',
+                description: 'Показувати кількість голосів біля рейтингів (якщо доступно)'
+            },
+            onRender: function() {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_logo_offset',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_logo_offset
+            },
+            field: {
+                name: 'Розмір логотипів рейтингів',
+                description: 'Зміна висоти логотипів. \n"0" – стандарт, вводимо від "1" чи від "-1".'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_font_offset',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_font_offset
+            },
+            field: {
+                name: 'Розмір числа рейтингу',
+                description: 'Зміна розміру числа рейтингу та розміру фону. \n"0" – стандарт, вводимо від "1" чи від "-1".'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_badge_alpha',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_badge_alpha
+            },
+            field: {
+                name: 'Прозорість фону під рейтингом',
+                description: 'Прозорість фону. Стандартне значення: "0.15". \n"0" – прозорий, "1" – чорний.'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_badge_tone',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_badge_tone
+            },
+            field: {
+                name: 'Яскравість плиток',
+                description: 'Яскравість плиток. \n"0" – чорний. Від 0 до 255 (напр. "50" - темно-сірий).'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_gap_step',
+                type: 'input',
+                values: '',
+                "default": RCFG_DEFAULT.ratings_gap_step
+            },
+            field: {
+                name: 'Відступи між блоками (крок)',
+                description: 'Додатковий відступ. "0" – стандарт (0.3em). \nЩоб збільшити - вводимо від "1"'
+            },
+            onRender: function(item) {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_colorize_all',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_colorize_all
+            },
+            field: {
+                name: 'Кольорові оцінки рейтингів',
+                description: 'Кольорове виділення оцінок рейтингів'
+            },
+            onRender: function() {}
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_enable_imdb',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_enable_imdb
+            },
+            field: {
+                name: 'IMDb',
+                description: 'Показувати/ховати джерело'
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_enable_tmdb',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_enable_tmdb
+            },
+            field: {
+                name: 'TMDB',
+                description: 'Показувати/ховати джерело'
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_enable_mc',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_enable_mc
+            },
+            field: {
+                name: 'Metacritic',
+                description: 'Показувати/ховати джерело'
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_enable_rt',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_enable_rt
+            },
+            field: {
+                name: 'RottenTomatoes',
+                description: 'Показувати/ховати джерело'
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_enable_popcorn',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_enable_popcorn
+            },
+            field: {
+                name: 'Popcornmeter',
+                description: 'Показувати/ховати джерело'
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                name: 'ratings_poster_badges',
+                type: 'trigger',
+                "default": RCFG_DEFAULT.ratings_poster_badges
+            },
+            field: {
+                name: 'Додаткові рейтинги на постері',
+                description: 'Показувати наявні та додаткові рейтинги на постері'
+            },
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: 'lmp_ratings',
+            param: {
+                type: 'button',
+                component: 'lmp_clear_cache'
+            },
+            field: {
+                name: 'Очистити кеш рейтингів'
+            },
+            onChange: function() {
+                lmpRatingsClearCache();
+            }
+        });
+    }
+
+    function initRatingsPluginUI() {
+        ensureDefaultToggles();
+        addSettingsSection();
+        patchStorageSetOnce();
+        attachLiveSettingsHandlers();
+
+        window.LampaRatings = window.LampaRatings || {};
+        window.LampaRatings.applyStyles = applyStylesToAll;
+        window.LampaRatings.getConfig = getCfg;
+
+        try { wirePosterBadgesListener(); } catch (e) {}
+
+        applyStylesToAll();
+    }
+
+    function startPlugin() {
+        window.combined_ratings_plugin = true;
+        Lampa.Listener.follow('full', function(e) {
+            if (e.type === 'complite') {
+                setTimeout(function() {
+                    fetchAdditionalRatings(e.data.movie || e.object || {});
+                    __lmpTenFixStart();
+                }, 500);
+            }
+        });
+    }
+
+    Lampa.Template.add('lmp_enh_styles', pluginStyles);
+    $('body').append(Lampa.Template.get('lmp_enh_styles', {}, true));
+
+    initRatingsPluginUI();
+    refreshConfigFromStorage();
+
+    window.addEventListener('resize', reapplyOnResize);
+    window.addEventListener('orientationchange', reapplyOnResize);
+
+    if (!window.combined_ratings_plugin) {
+        startPlugin();
+    }
 })();
