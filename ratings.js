@@ -168,26 +168,20 @@
 
     "body.lmp-enh--rate-border .full-start-new__rate-line, " +
     "body.lmp-enh--rate-border .full-start__rate-line{" +
-    "}"
+    "  flex-wrap: wrap;" +
+    "  gap: 0.3em;" +
+    "}" +
     "</style>";
 
-  // ────────────────────────────────────────────────────────────────
   // Мінімальні перевірки Promise та fetch
-  // ────────────────────────────────────────────────────────────────
-
   if (!window.Promise) {
     console.warn('[LMP Ratings] Native Promise відсутній — дуже стара платформа');
-    // Якщо потрібно — можна додати повний MiniPromise, але краще не
   }
 
   if (!window.fetch) {
     console.warn('[LMP Ratings] Використовуємо Lampa.Reguest як фолбек для fetch');
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Константи та конфігурація
-  // ────────────────────────────────────────────────────────────────
-
+// Константи та конфігурація
   var LMP_ENH_CONFIG = {
     apiKeys: {
       mdblist: '',
@@ -226,7 +220,7 @@
     ratings_badge_tone: 0,
     ratings_gap_step: 0,
     ratings_colorize_all: false,
-    ratings_color_by_source: true,       // НОВА — кольори за джерелом
+    ratings_color_by_source: true,
     ratings_enable_imdb: true,
     ratings_enable_tmdb: true,
     ratings_enable_mc: true,
@@ -241,10 +235,7 @@
     'TV-Y': '0+', 'TV-Y7': '7+', 'TV-G': '3+', 'TV-PG': '6+', 'TV-14': '14+', 'TV-MA': '17+'
   };
 
-  // ────────────────────────────────────────────────────────────────
   // Покращені повідомлення про помилки
-  // ────────────────────────────────────────────────────────────────
-
   function apiErrorToast(source, errorType, details = '') {
     let msg = '';
     switch (errorType) {
@@ -261,10 +252,7 @@
     console.error('[LMP Ratings Error]', source, errorType, details);
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Кольори за джерелом (незалежно від colorize_all)
-  // ────────────────────────────────────────────────────────────────
-
+  // Кольори за джерелом
   function getSourceColorClass(source, value, extra = {}) {
     if (!LMP_ENH_CONFIG || !LMP_ENH_CONFIG.color_by_source) return '';
 
@@ -291,7 +279,7 @@
       case 'metacritic':
       case 'mc':
       case 'metascore':
-        let mv = v * 10; // часто приходить у 10-бальній шкалі
+        let mv = v * 10;
         if (mv >= 80) return 'rating--green';
         if (mv >= 60) return 'rating--blue';
         if (mv >= 40) return 'rating--orange';
@@ -308,21 +296,14 @@
     }
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // Допоміжна функція форматування чисел (1.2M, 45K)
-  // ────────────────────────────────────────────────────────────────
-
+  // Форматування чисел (1.2M, 45K)
   function formatNumber(n) {
     if (!n || isNaN(n)) return '?';
     if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
     if (n >= 1000)     return (n / 1000).toFixed(0)   + 'K';
     return n.toString();
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Оновлена функція insertRatings з votes / percent / count
-  // ────────────────────────────────────────────────────────────────
-
+  // Оновлена функція insertRatings
   function insertRatings(data) {
     var render = Lampa.Activity.active().activity.render();
     if (!render) return;
@@ -338,8 +319,7 @@
       if (!cfg.enableImdb || !data.imdb_display) return;
 
       var text = data.imdb_display;
-      var extra = '';
-      if (data.imdb_votes) extra = ` (${formatNumber(data.imdb_votes)})`;
+      var extra = data.imdb_votes ? ` (${formatNumber(data.imdb_votes)})` : '';
 
       var $cont = $('.rate--imdb', rateLine);
       if (!$cont.length) {
@@ -368,10 +348,7 @@
       if (!cfg.enableRt || !data.rt_display) return;
 
       var text = data.rt_display + '%';
-      var extra = '';
-      if (data.rt_audience_score) {
-        extra += ` | \( {data.rt_audience_score}% ( \){formatNumber(data.rt_audience_count || '?')})`;
-      }
+      var extra = data.rt_audience_score ? ` | \( {data.rt_audience_score}% ( \){formatNumber(data.rt_audience_count || '?')})` : '';
 
       var $cont = $('.rate--rt', rateLine);
       if (!$cont.length) {
@@ -430,16 +407,9 @@
       }
     })();
 
-    // ─── Інші джерела (TMDB, Popcorn, AVG, нагороди) ─────────────────
-    // можна розширити аналогічно, якщо потрібно
-
     applyStylesToAll();
   }
-
-  // ────────────────────────────────────────────────────────────────
-  // Оновлений fetchMdbListRatings з votes/count та помилками
-  // ────────────────────────────────────────────────────────────────
-
+  // Оновлений fetchMdbListRatings
   function fetchMdbListRatings(card, callback) {
     var key = LMP_ENH_CONFIG.apiKeys.mdblist;
     if (!key) {
@@ -522,10 +492,7 @@
     );
   }
 
-  // ────────────────────────────────────────────────────────────────
-  // fetchOmdbRatings — додано votes та помилки
-  // ────────────────────────────────────────────────────────────────
-
+  // fetchOmdbRatings
   function fetchOmdbRatings(card, callback) {
     var key = LMP_ENH_CONFIG.apiKeys.omdb;
     if (!key || !card.imdb_id) {
@@ -538,14 +505,12 @@
     var url = `https://www.omdbapi.com/?apikey=\( {encodeURIComponent(key)}&i= \){encodeURIComponent(card.imdb_id)}${typeParam}`;
 
     new Lampa.Reguest().silent(url, function(data) {
-      if (!data || data.Response !== 'True') {        
+      if (!data || data.Response !== 'True') {
         const errorText = (data && data.Error ? data.Error.toLowerCase() : '');
-
         const type = errorText.includes('incorrect') ? 'invalid_key' :
-             errorText.includes('not found') ? 'not_found' : 
-             !data ? 'network' : 'unknown';
+                     errorText.includes('not found') ? 'not_found' :
+                     !data ? 'network' : 'unknown';
         apiErrorToast('OMDb', type, data.Error || '');
-
         return callback(null);
       }
 
@@ -583,32 +548,9 @@
       apiErrorToast('OMDb', 'network');
       callback(null);
     });
-  }
-
-  // ────────────────────────────────────────────────────────────────
-  // Далі йде решта коду без суттєвих змін (можна вставити з попередньої версії)
-  // mergeRatings, getImdbIdFromTmdb, renderPosterBadges, addSettingsSection тощо
-  // ────────────────────────────────────────────────────────────────
-
-  // Приклад: додати нову опцію в налаштування (якщо ще не додано)
-  // У функції addSettingsSection() вставити:
-
-  /*
-  Lampa.SettingsApi.addParam({
-    component: 'lmp_ratings',
-    param: { name: 'ratings_color_by_source', type: 'trigger', "default": true },
-    field: {
-      name: 'Кольори за джерелом',
-      description: 'Кожне джерело має власну кольорову схему (незалежно від "Кольорові оцінки")'
-    }
-  });
-  */
-
-  // ────────────────────────────────────────────────────────────────
-  // Запуск плагіну (залишається без змін)
-  // ────────────────────────────────────────────────────────────────
-
-  Lampa.Template.add('lmp_enh_styles', pluginStyles); // pluginStyles має бути визначено раніше
+          }
+  // Запуск плагіну
+  Lampa.Template.add('lmp_enh_styles', pluginStyles);
   $('body').append(Lampa.Template.get('lmp_enh_styles', {}, true));
 
   initRatingsPluginUI();
