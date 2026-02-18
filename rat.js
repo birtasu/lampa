@@ -71,49 +71,6 @@
         return null;
     }
 
-    function requestOMDB(id, render, anchor) {
-        var key = Lampa.Storage.get('omdb_api_key', '');
-        if (!key) return;
-        
-        $.getJSON('https://www.omdbapi.com/?apikey=' + key + '&i=' + id, function(data) {
-            if (data && data.Response !== "False") {
-                if (data.Awards && data.Awards !== "N/A") {
-                    var oscarsMatch = data.Awards.match(/Won (\d+) Oscar/i);
-                    var winsMatch = data.Awards.match(/(\d+) win/i);
-                    
-                    if (oscarsMatch && parseInt(oscarsMatch[1]) > 0) {
-                        if ($('.rate--omdb-oscar', render).length === 0) {
-                            var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#feca57');
-                            anchor.before(oscarBlock);
-                        }
-                    }
-                    
-                    if (winsMatch && parseInt(winsMatch[1]) > 0) {
-                        if ($('.rate--omdb-awards', render).length === 0) {
-                            var awardBlock = createBlock('rate--omdb-awards', icons.award, winsMatch[1], '#fff');
-                            anchor.before(awardBlock);
-                        }
-                    }
-                }
-
-                // Додаємо рейтинги
-                if (data.Metascore && data.Metascore !== 'N/A') {
-                    addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
-                }
-                
-                var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
-                if (rt) {
-                    addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
-                }
-                
-                // Додаємо IMDB рейтинг
-                if (data.imdbRating && data.imdbRating !== 'N/A') {
-                    addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
-                }
-            }
-        });
-    }
-
     function updateRatings(e) {
         var render = e.object.activity.render();
         var movie = e.data.movie;
@@ -141,13 +98,45 @@
 
         var imdb_id = movie.imdb_id || (movie.external_ids ? movie.external_ids.imdb_id : '');
 
+        var requestOMDB = function(id) {
+            var key = Lampa.Storage.get('omdb_api_key', '');
+            if (!key) return;
+            $.getJSON('https://www.omdbapi.com/?apikey=' + key + '&i=' + id, function(data) {
+                if (data && data.Response !== "False") {
+                    if (data.Awards && data.Awards !== "N/A") {
+                        var oscarsMatch = data.Awards.match(/Won (\d+) Oscar/i);
+                        var winsMatch = data.Awards.match(/(\d+) win/i);
+                        
+                        if (oscarsMatch && parseInt(oscarsMatch[1]) > 0) {
+                            if ($('.rate--omdb-oscar', render).length === 0) {
+                                var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#feca57');
+                                anchor.before(oscarBlock);
+                            }
+                        }
+                        
+                        if (winsMatch && parseInt(winsMatch[1]) > 0) {
+                            if ($('.rate--omdb-awards', render).length === 0) {
+                                var awardBlock = createBlock('rate--omdb-awards', icons.award, winsMatch[1], '#fff');
+                                anchor.before(awardBlock);
+                            }
+                        }
+                    }
+
+                    if (data.Metascore && data.Metascore !== 'N/A') addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                    var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
+                    if (rt) addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
+                    if (data.imdbRating && data.imdbRating !== 'N/A') addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
+                }
+            });
+        };
+
         if (imdb_id) {
-            requestOMDB(imdb_id, render, anchor);
+            requestOMDB(imdb_id);
         } else if (movie.id) {
             var type = (e.object.method === 'tv' || movie.number_of_seasons) ? 'tv' : 'movie';
             if (window.Lampa && Lampa.Network && Lampa.TMDB) {
                 Lampa.Network.silent(Lampa.TMDB.api(type + '/' + movie.id + '/external_ids?api_key=' + Lampa.TMDB.key()), function (res) {
-                    if (res && res.imdb_id) requestOMDB(res.imdb_id, render, anchor);
+                    if (res && res.imdb_id) requestOMDB(res.imdb_id);
                 });
             }
         }
@@ -186,26 +175,20 @@
         Lampa.SettingsApi.addParam({
             component: COMPONENT_NAME,
             param: { name: "omdb_api_key_set", type: "static" },
-            field: { name: "OMDB API Key", description: "Введіть ваш API ключ від OMDB" },
+            field: { name: "API Key", description: "Натисніть для введення" },
             onRender: function (item) {
                 var currentKey = Lampa.Storage.get('omdb_api_key', '');
                 var valEl = $('<div class="omdb-api-val">' + (currentKey || 'Не встановлено') + '</div>');
                 item.find('.settings-param__descr').after(valEl);
-                
                 item.on('hover:enter', function() {
                     Lampa.Input.edit({
                         title: 'OMDB API Key',
                         value: Lampa.Storage.get('omdb_api_key', ''),
                         free: true,
-                        nosave: true,
-                        help: 'Отримайте ключ на omdbapi.com/apikey.aspx'
+                        nosave: true
                     }, function(newValue) {
-                        if (newValue !== undefined) {
-                            Lampa.Storage.set('omdb_api_key', newValue);
-                            valEl.text(newValue || 'Не встановлено');
-                            
-                            Lampa.Notify.show('API ключ збережено');
-                        }
+                        Lampa.Storage.set('omdb_api_key', newValue);
+                        valEl.text(newValue || 'Не встановлено');
                     });
                 });
             }
@@ -219,7 +202,7 @@
                 values: { '0.5em': 'XS', '0.8em': 'S', '1.1em': 'M', '1.5em': 'L', '2.0em': 'XL' },
                 default: '0.8em'
             },
-            field: { name: 'Розмір рейтингу', description: 'Виберіть розмір для всіх рейтингів' }
+            field: { name: 'Розмір рейтингу' }
         });
 
         Lampa.Listener.follow('full', function (e) {
