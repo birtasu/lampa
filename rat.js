@@ -29,6 +29,7 @@
         if (!val || val === 0) return '#fff';
         if (val < 3) return '#ff4d4d';
         else if (val < 5) return '#ff9f43';
+        else if (val < 6) return '#feca57';
         else if (val < 7.5) return '#ffff00';
         else return '#2ecc71';
     }
@@ -219,9 +220,10 @@
 function getRatingColor(rating) {
     var val = parseFloat(rating);
     if (!val || val === 0) return '#ffffff';
-    if (val < 5) return '#ff4d4d';      // червоний
-    if (val < 6.5) return '#ff9f43';    // оранжевий
-    if (val < 8) return '#ffff00';       // жовтий
+    if (val < 3) return '#ff4d4d';      
+    if (val < 5) return '#ff9f43';
+    if (val < 6) return '#feca57';
+    if (val < 7.5) return '#ffff00';   
     return '#2ecc71';                    // зелений
 }
 
