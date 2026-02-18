@@ -1,12 +1,12 @@
 /**
  * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges
- * Стабільна версія для Lampa 3.1.6 — без backtick-ів, працює
+ * Повна версія для Lampa 3.1.6 — без backtick, стабільна
  */
 
 (function() {
   'use strict';
 
-  console.log('[RTG] Плагін завантажився');
+  console.log('[RTG] Плагін завантажився повністю');
 
   var pluginStyles = '<style>' +
     '.loading-dots-container{display:flex;align-items:center;font-size:0.85em;color:#ccc;padding:0.6em 1em;border-radius:0.5em;}' +
@@ -66,10 +66,10 @@
 
   function getCfg() {
     return {
-      ratings_color_by_source: Lampa.Storage.get('ratings_color_by_source', true),
-      ratings_enable_imdb: Lampa.Storage.get('ratings_enable_imdb', true),
-      ratings_enable_rt: Lampa.Storage.get('ratings_enable_rt', true),
-      ratings_enable_mc: Lampa.Storage.get('ratings_enable_mc', true)
+      ratings_color_by_source: Lampa.Storage.get('ratings_color_by_source', RCFG_DEFAULT.ratings_color_by_source),
+      ratings_enable_imdb: Lampa.Storage.get('ratings_enable_imdb', RCFG_DEFAULT.ratings_enable_imdb),
+      ratings_enable_rt: Lampa.Storage.get('ratings_enable_rt', RCFG_DEFAULT.ratings_enable_rt),
+      ratings_enable_mc: Lampa.Storage.get('ratings_enable_mc', RCFG_DEFAULT.ratings_enable_mc)
     };
   }
 
@@ -162,7 +162,6 @@
     console.log('[RTG] Рейтинги оновлено');
   }
 
-  // Слухач на відкриття деталів
   Lampa.Listener.follow('full', function(e) {
     if (e.type === 'complite') {
       console.log('[RTG] Деталі фільму відкрито');
