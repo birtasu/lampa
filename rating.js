@@ -4,7 +4,7 @@
  * - Бере рейтинги з MDBList (+ OMDb для віку/нагород) і малює їх у деталці
  * - Додає опційні "стікери" (badges) рейтингів прямо на постери
  * - Має секцію налаштувань "Рейтинги", живе застосування стилів без перезавантаження
- * - Додано відображення кількості голосів біля кожного рейтингу (виправлено)
+ * - Додано відображення кількості голосів біля кожного рейтингу
  */
 
 (function() {
@@ -41,7 +41,7 @@
      |========================================================================== */
 
     (function(global) {
-        if (global.Promise) return;
+        if (global.Promise) return; // Вже є
         var PENDING = 0, FULFILLED = 1, REJECTED = 2;
         function asap(fn) { setTimeout(fn, 0); }
         function MiniPromise(executor) {
@@ -129,7 +129,7 @@
      |========================================================================== */
 
     (function(global) {
-        if (global.fetch) return;
+        if (global.fetch) return; // Вже є
         function Response(body, init) {
             this.status = init && init.status || 200;
             this.ok = this.status >= 200 && this.status < 300;
@@ -152,6 +152,7 @@
             var method = (init.method || 'GET').toUpperCase();
             var headers = init.headers || {};
             var body = init.body || null;
+            // Якщо є Lampa.Reguest — використовуємо його (обхід CORS)
             if (global.Lampa && Lampa.Reguest) {
                 return new Promise(function(resolve) {
                     new Lampa.Reguest().native(
@@ -168,6 +169,7 @@
                     );
                 });
             }
+            // Звичайний XMLHttpRequest-фолбек
             return new Promise(function(resolve, reject) {
                 try {
                     var xhr = new XMLHttpRequest();
@@ -189,11 +191,17 @@
         };
     })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
 
+})();
+
+(function() {
+    'use strict';
+
     /* ==========================================================================
      | 1. ШИМИ / ПОЛІФІЛИ
      | (Для старих Android Webview)
      |========================================================================== */
 
+    // NodeList.forEach
     if (window.NodeList && !NodeList.prototype.forEach) {
         NodeList.prototype.forEach = function(callback, thisArg) {
             thisArg = thisArg || window;
@@ -203,6 +211,7 @@
         };
     }
 
+    // Element.matches
     if (!Element.prototype.matches) {
         Element.prototype.matches = Element.prototype.msMatchesSelector || Element.prototype.webkitMatchesSelector || function(selector) {
             var node = this;
@@ -214,6 +223,7 @@
         };
     }
 
+    // Element.closest
     if (!Element.prototype.closest) {
         Element.prototype.closest = function(selector) {
             var el = this;
@@ -229,12 +239,15 @@
      | 2. КОНСТАНТИ ТА КОНФІГУРАЦІЯ
      |========================================================================== */
 
+    /**
+     * Конфігурація API ключів
+     */
     var LMP_ENH_CONFIG = {
         apiKeys: {
-            mdblist: '',
-            omdb: ''
+            mdblist: '', // ✅ ключ до MDBList
+            omdb: '' // ✅ ключ до OMDb
         },
-        monochromeIcons: false
+        monochromeIcons: false /*✅ Вкл./Викл. Ч/Б рейтинги */
     };
 
     var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/';
@@ -318,10 +331,10 @@
         "body.lmp-enh--mono .full-start__rate {" +
         " color: inherit !important;" +
         "}" +
-        "body:not(.lmp-enh--mono) .full-start__rate.rating--green { color: #2ecc71; }" +
-        "body:not(.lmp-enh--mono) .full-start__rate.rating--blue { color: #60a5fa; }" +
-        "body:not(.lmp-enh--mono) .full-start__rate.rating--orange { color: #f59e0b; }" +
-        "body:not(.lmp-enh--mono) .full-start__rate.rating--red { color: #ef4444; }" +
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--green { color: #2ecc71; }" + /* ≥ 8.0 */
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--blue { color: #60a5fa; }" + /* 6.0–7.9 */
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--orange { color: #f59e0b; }" + /* 4.0–5.9 */
+        "body:not(.lmp-enh--mono) .full-start__rate.rating--red { color: #ef4444; }" + /* < 4.0 */
         ".full-start-new__rate-line .full-start__rate {" +
         " margin-right: 0.3em !important;" +
         "}" +
@@ -402,39 +415,17 @@
         " border-radius: 0.3em;" +
         " box-sizing: border-box;" +
         "}" +
+        "body.lmp-enh--rate-border .full-start-new__rate-line, " +
+        "body.lmp-enh--rate-border .full-start__rate-line{" +
+        "}" +
         "body.lmp-enh--show-votes .full-start__rate .votes-count { display: inline; }" +
         "body:not(.lmp-enh--show-votes) .full-start__rate .votes-count { display: none; }" +
-        ".card__lmerating{" +
-        " position:absolute;" +
-        " right:-0.8em;" +
-        " padding:0.40em 0.60em;" +
-        " background:linear-gradient(90deg,#2c2c2c,#1a1a1a);" +
-        " color:#fff;" +
-        " border-radius:0.35em;" +
-        " text-transform:uppercase;" +
-        " font-size:0.80em;" +
-        " line-height:1;" +
-        " box-shadow:0 2px 6px rgba(0,0,0,.35);" +
-        " z-index:5;" +
-        " pointer-events:none;" +
-        " white-space:nowrap;" +
-        "}" +
-        ".card__lmerating .votes-badge{" +
-        " font-size:0.8em;" +
-        " opacity:0.8;" +
-        " margin-left:0.2em;" +
-        "}" +
-        "@media (max-width:768px){" +
-        " .card__lmerating{ right:.2em; font-size:.74em; }" +
-        "}" +
-        "@media (max-width:480px){" +
-        " .card__lmerating{ right:.2em; font-size:.66em; }" +
-        "}" +
         "</style>";
 
-    var CACHE_TIME = 3 * 24 * 60 * 60 * 1000;
-    var RATING_CACHE_KEY = 'lmp_enh_rating_cache';
-    var ID_MAPPING_CACHE = 'lmp_rating_id_cache';
+    var CACHE_TIME = 3 * 24 * 60 * 60 * 1000; // 3 дні
+    // var CACHE_TIME = 60 * 60 * 1000; // ✅ 1 година для перевірок
+    var RATING_CACHE_KEY = 'lmp_enh_rating_cache'; // Кеш рейтингів
+    var ID_MAPPING_CACHE = 'lmp_rating_id_cache'; // Кеш TMDB -> IMDb ID
 
     var AGE_RATINGS = {
         'G': '3+',
@@ -451,8 +442,8 @@
     };
 
     var RCFG_DEFAULT = {
-        ratings_omdb_key: '',
-        ratings_mdblist_key: '',
+        ratings_omdb_key: (LMP_ENH_CONFIG.apiKeys.omdb || ''),
+        ratings_mdblist_key: (LMP_ENH_CONFIG.apiKeys.mdblist || ''),
         ratings_bw_logos: false,
         ratings_show_awards: true,
         ratings_show_average: true,
@@ -461,6 +452,7 @@
         ratings_badge_alpha: 0.15,
         ratings_badge_tone: 0,
         ratings_gap_step: 0,
+        // Нові тумблери
         ratings_colorize_all: false,
         ratings_enable_imdb: true,
         ratings_enable_tmdb: true,
@@ -469,12 +461,12 @@
         ratings_enable_popcorn: true,
         ratings_poster_badges: false,
         ratings_rate_border: false,
-        ratings_show_votes: true
+        ratings_show_votes: true, // ✅ Новий параметр: показувати кількість голосів
     };
 
-    var __lmpRateLineObs = null;
-    var currentRatingsData = null;
-    var __lmpLastReqToken = null;
+    var __lmpRateLineObs = null; // Спостерігач за DOM (для лоадера)
+    var currentRatingsData = null; // Кеш рейтингів для поточної картки
+    var __lmpLastReqToken = null; // Токен останнього запиту (для уникнення гонки)
 
     function getCardType(card) {
         var type = card.media_type || card.type;
@@ -493,10 +485,10 @@
     function getRatingClass(rating) {
         var r = parseFloat(rating);
         if (isNaN(r)) return 'rating--red';
-        if (r >= 8.0) return 'rating--green';
-        if (r >= 6.0) return 'rating--blue';
-        if (r >= 4.0) return 'rating--orange';
-        return 'rating--red';
+        if (r >= 8.0) return 'rating--green'; // ≥ 8.0
+        if (r >= 6.0) return 'rating--blue'; // 6.0–7.9
+        if (r >= 4.0) return 'rating--orange'; // 4.0–5.9
+        return 'rating--red'; // < 4.0
     }
 
     function posterCacheKeyForCard(card) {
@@ -539,6 +531,49 @@
         if (d.popcorn_display) a.push({ source: 'popcorn', value: d.popcorn_display, votes: d.popcorn_votes });
         if (d.tmdb_display) a.push({ source: 'tmdb', value: d.tmdb_display, votes: d.tmdb_votes });
         return a;
+    }
+
+    function ensurePosterBadgeStylesOnce() {
+        if (document.getElementById('lmp-poster-badges-css')) return;
+        var css = `
+        /* === Бейдж одного рейтингу на постері === */
+        .card__lmerating{
+            position:absolute;
+            right:-0.8em;
+            padding:0.40em 0.60em;
+            background:linear-gradient(90deg,#2c2c2c,#1a1a1a);
+            color:#fff;
+            border-radius:0.35em;
+            text-transform:uppercase;
+            font-size:0.80em;
+            line-height:1;
+            box-shadow:0 2px 6px rgba(0,0,0,.35);
+            z-index:5;
+            pointer-events:none;
+            white-space:nowrap;
+        }
+        .card__lmerating .votes-badge{
+            font-size:0.8em;
+            opacity:0.8;
+            margin-left:0.2em;
+        }
+        @media (max-width:768px){
+            .card__lmerating{
+                right:.2em;
+                font-size:.74em;
+            }
+        }
+        @media (max-width:480px){
+            .card__lmerating{
+                right:.2em;
+                font-size:.66em;
+            }
+        }
+        `.trim();
+        var st = document.createElement('style');
+        st.id = 'lmp-poster-badges-css';
+        st.textContent = css;
+        document.head.appendChild(st);
     }
 
     function iconImg(url, alt, sizePx, extraStyle) {
@@ -597,13 +632,14 @@
     function addLoadingAnimation() {
         var render = Lampa.Activity.active().activity.render();
         if (!render || !render[0]) return;
-        if ($('#lmp-search-loader', render).length) return;
+        if ($('#lmp-search-loader', render).length) return; // Вже є
         var loaderHtml = '<div id="lmp-search-loader" class="loading-dots-container">' +
             '<div class="loading-dots__text">Пошук…</div>' +
             '<div class="loading-dots__dot"></div>' +
             '<div class="loading-dots__dot"></div>' +
             '<div class="loading-dots__dot"></div>' +
             '</div>';
+        var realSel = '.full-start-new__rate-line:not([data-lmp-fake]), .full-start__rate-line:not([data-lmp-fake])';
         var rateLine = getPrimaryRateLine(render);
         if (rateLine.length) {
             rateLine.append(loaderHtml);
@@ -646,6 +682,7 @@
         $('#lmp-search-loader', render).remove();
         $('#lmp-loader-fake', render).remove();
         var rl = getPrimaryRateLine(render);
+        //var rl = $('.full-start-new__rate-line:not([data-lmp-fake]), .full-start__rate-line:not([data-lmp-fake])', render).first();
         if (rl.length) undimRateLine(rl);
         try { if (__lmpRateLineObs) __lmpRateLineObs.disconnect(); } catch (_) {}
         __lmpRateLineObs = null;
@@ -695,7 +732,9 @@
 
     (function() {
         function fixTenIn(el) {
+            // Нормалізуємо пробіли (у т.ч. нерозривні)
             var t = (el.textContent || '').replace(/\u00A0/g, ' ').trim();
+            // 10 з будь-якою кількістю нульових десяткових: 10.0, 10.00, 10., 10,0
             if (/^10(?:[.,]0+)?$/.test(t)) {
                 el.textContent = '10';
             }
@@ -770,6 +809,7 @@
 
     function lmpRatingsClearCache() {
         try {
+            // RATING_CACHE_KEY та ID_MAPPING_CACHE визначені у Секції 2
             Lampa.Storage.set(RATING_CACHE_KEY, {});
             Lampa.Storage.set(ID_MAPPING_CACHE, {});
             lmpToast('Кеш рейтингів очищено');
@@ -1091,6 +1131,7 @@
             return;
         }
 
+        ensurePosterBadgeStylesOnce();
         var $render = renderRoot || (Lampa.Activity.active().activity.render && Lampa.Activity.active().activity.render());
         if (!$render || !$render.length) return;
 
@@ -1102,8 +1143,8 @@
         var items = filterMdblistLike(raw);
         if (!items.length) return;
 
-        var topStartEm = 0.8;
-        var stepEm = 2.0;
+        var topStartEm = 0.8; // Початковий відступ зверху
+        var stepEm = 2.0; // Крок між бейджами
 
         items.forEach(function(it, i) {
             var $b = $('<div class="card__lmerating"></div>');
@@ -1121,6 +1162,7 @@
         $cardView.find('.card__lmerating').remove();
         var items = filterMdblistLike(rawRatings);
         if (!items.length) return;
+        ensurePosterBadgeStylesOnce();
 
         var cfg = getCfg();
         var topStartEm = 0.6, stepEm = 2.0;
@@ -1133,7 +1175,7 @@
             }
             var $b = $('<div class="card__lmerating"></div>');
             $b.css('top', 'calc(' + topStartEm + 'em + ' + (i * stepEm) + 'em)').html(txt);
-            $cardView.append($b);
+            $cardView.append($b); // $poster не визначено тут, міняємо на $cardView
         });
     }
 
@@ -1214,10 +1256,20 @@
         cleanupRtgInjected(render);
         var rateLine = getPrimaryRateLine(render);
         if (!rateLine.length) return;
+        //var rateLine = $('.full-start-new__rate-line:not([data-lmp-fake]), .full-start__rate-line:not([data-lmp-fake])', render);
+        //if (!rateLine.length) return;
 
-        var cfg = getCfg();
+        var cfg = (typeof getCfg === 'function') ? getCfg() : {
+            enableImdb: true,
+            enableTmdb: true,
+            enableMc: true,
+            enableRt: true,
+            enablePop: true,
+            mcMode: 'meta',
+            colorizeAll: false,
+            showVotes: true
+        };
 
-        // Metacritic
         (function() {
             var cont = $('.rate--mc', rateLine);
             if (!cfg.enableMc) {
@@ -1282,7 +1334,6 @@
             if (cfg.colorizeAll) cont.addClass(getRatingClass(mcVal));
         })();
 
-        // Rotten Tomatoes
         (function() {
             var cont = $('.rate--rt', rateLine);
             if (!cfg.enableRt) {
@@ -1339,7 +1390,6 @@
             if (cfg.colorizeAll) cont.addClass(getRatingClass(rtVal));
         })();
 
-        // Popcorn
         (function() {
             var cont = $('.rate--popcorn', rateLine);
             if (!cfg.enablePop) {
@@ -1437,8 +1487,18 @@
         if (!render) return;
         var rateLine = getPrimaryRateLine(render);
         if (!rateLine.length) return;
+        //var rateLine = $('.full-start-new__rate-line:not([data-lmp-fake]), .full-start__rate-line:not([data-lmp-fake])', render);
+        //if (!rateLine.length) return;
 
-        var cfg = getCfg();
+        var cfg = (typeof getCfg === 'function') ? getCfg() : {
+            enableImdb: true,
+            enableTmdb: true,
+            enableMc: true,
+            enableRt: true,
+            enablePop: true,
+            colorizeAll: true,
+            showAverage: true
+        };
 
         $('.rate--avg', rateLine).remove();
         if (!cfg.showAverage) {
@@ -1487,7 +1547,7 @@
         if (firstRate.length) firstRate.before(avgElement);
         else rateLine.prepend(avgElement);
 
-        try { applyAwardsColor(rateLine, cfg); } catch (e) {}
+        try { applyAwardsColor(rateLine, (typeof getCfg === 'function') ? getCfg() : null); } catch (e) {}
         removeLoadingAnimation();
         undimRateLine(rateLine);
     }
@@ -1512,7 +1572,7 @@
         __lmpLastReqToken = reqToken;
 
         function renderAll() {
-            if (reqToken !== __lmpLastReqToken) return;
+            if (reqToken !== __lmpLastReqToken) return; // Запит застарів
             if (!currentRatingsData) {
                 removeLoadingAnimation();
                 return;
@@ -1530,7 +1590,7 @@
             var cached = cacheKey ? getCachedRatings(cacheKey) : null;
             if (cached) {
                 currentRatingsData = cached;
-                renderAll();
+                renderAll(); // Малюємо одразу, БЕЗ лоадера
                 return;
             }
 
@@ -1625,7 +1685,7 @@
         var enPopcorn = !!Lampa.Storage.field('ratings_enable_popcorn', RCFG_DEFAULT.ratings_enable_popcorn);
         var posterBadges = !!Lampa.Storage.field('ratings_poster_badges', RCFG_DEFAULT.ratings_poster_badges);
         var rateBorder = !!Lampa.Storage.field('ratings_rate_border', RCFG_DEFAULT.ratings_rate_border);
-        var showVotes = !!Lampa.Storage.field('ratings_show_votes', RCFG_DEFAULT.ratings_show_votes);
+        var showVotes = !!Lampa.Storage.field('ratings_show_votes', RCFG_DEFAULT.ratings_show_votes); // ✅ Новий параметр
 
         return {
             omdbKey: omdbKey || '',
@@ -1646,7 +1706,7 @@
             enablePop: enPopcorn,
             enablePosterBadges: posterBadges,
             rateBorder: rateBorder,
-            showVotes: showVotes
+            showVotes: showVotes // ✅ Новий параметр
         };
     }
 
@@ -1656,12 +1716,14 @@
         LMP_ENH_CONFIG.apiKeys.mdblist = cfg.mdblistKey || '';
         LMP_ENH_CONFIG.monochromeIcons = cfg.bwLogos;
 
+        // Оновлюємо клас на body
         if (cfg.bwLogos) {
             $('body').addClass('lmp-enh--mono');
         } else {
             $('body').removeClass('lmp-enh--mono');
         }
 
+        // Оновлюємо клас для показу голосів
         if (cfg.showVotes) {
             $('body').addClass('lmp-enh--show-votes');
         } else {
@@ -1683,6 +1745,14 @@
         nodes.forEach(function(n) {
             n.style.display = showAverage ? '' : 'none';
         });
+    }
+
+    function toggleVotes(showVotes) {
+        if (showVotes) {
+            $('body').addClass('lmp-enh--show-votes');
+        } else {
+            $('body').removeClass('lmp-enh--show-votes');
+        }
     }
 
     function tuneRatingFont(offsetPx) {
@@ -1728,7 +1798,7 @@
             else if (img.closest('.rate--oscars') || img.closest('.lmp-award-icon--oscar')) varName = '--lmp-h-oscar';
             else if (img.closest('.rate--emmy') || img.closest('.lmp-award-icon--emmy')) varName = '--lmp-h-emmy';
             var baseH = cssVarPx(varName);
-            if (!baseH || baseH <= 0) baseH = 24;
+            if (!baseH || baseH <= 0) baseH = 24; // Фолбек
             var finalH = Math.max(1, baseH * scale);
             img.style.height = finalH + 'px';
             img.style.maxHeight = finalH + 'px';
@@ -1749,7 +1819,7 @@
 
     function tuneGap(gapStep) {
         var lines = document.querySelectorAll('.full-start-new__rate-line');
-        var totalEm = (0.3 + gapStep * 0.1);
+        var totalEm = (0.3 + gapStep * 0.1); // 0.3 базово
         lines.forEach(function(line) {
             var kids = line.children;
             for (var i = 0; i < kids.length; i++) {
@@ -1778,18 +1848,21 @@
     function applyStylesToAll() {
         var cfg = getCfg();
 
+        // Оновлюємо body клас
         if (cfg.bwLogos) {
             $('body').addClass('lmp-enh--mono');
         } else {
             $('body').removeClass('lmp-enh--mono');
         }
 
+        // Клас для показу голосів
         if (cfg.showVotes) {
             $('body').addClass('lmp-enh--show-votes');
         } else {
             $('body').removeClass('lmp-enh--show-votes');
         }
 
+        // Рамка навколо плиток рейтингів
         if (cfg.rateBorder) $('body').addClass('lmp-enh--rate-border');
         else $('body').removeClass('lmp-enh--rate-border');
 
@@ -1831,7 +1904,7 @@
             Lampa.Storage.set('ratings_show_average', true);
         }
         if (typeof Lampa.Storage.get('ratings_show_votes') === 'undefined') {
-            Lampa.Storage.set('ratings_show_votes', true);
+            Lampa.Storage.set('ratings_show_votes', true); // ✅ За замовчуванням показуємо голоси
         }
     }
 
@@ -1900,6 +1973,7 @@
             if (e.type !== 'append') return;
             var cfg = getCfg();
             if (!cfg.enablePosterBadges) {
+                // Вимкнули -> знімаємо з усіх
                 e.items.forEach(function(it) {
                     try { it.card.find('.card__view .card__lmerating').remove(); } catch (_) {}
                 });
@@ -2031,6 +2105,7 @@
             onRender: function(item) {}
         });
 
+        // ✅ Новий параметр: показувати кількість голосів
         Lampa.SettingsApi.addParam({
             component: 'lmp_ratings',
             param: {
@@ -2237,8 +2312,10 @@
         window.LampaRatings.applyStyles = applyStylesToAll;
         window.LampaRatings.getConfig = getCfg;
 
+        // Слухач для стікерів на постерах у грідах
         try { wirePosterBadgesListener(); } catch (e) {}
 
+        // Одразу застосувати стилі
         applyStylesToAll();
     }
 
@@ -2248,7 +2325,7 @@
             if (e.type === 'complite') {
                 setTimeout(function() {
                     fetchAdditionalRatings(e.data.movie || e.object || {});
-                    __lmpTenFixStart();
+                    __lmpTenFixStart(); // Запускаємо "фікс 10.0"
                 }, 500);
             }
         });
