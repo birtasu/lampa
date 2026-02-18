@@ -1,373 +1,14 @@
 /**
- * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges (like LME - Lampa Movie Enchancer)
- * --------------------------------------------------------
- * - Бере рейтинги з MDBList (+ OMDb для віку/нагород) і малює їх у деталці
- * - Додає опційні “стікери” (badges) рейтингів прямо на постери
- * - Має секцію налаштувань “Рейтинги”, живе застосування стилів без перезавантаження
+ * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges
+ * Оновлено 2026:
+ * • видалено зайві поліфіли (залишено тільки перевірки Promise/fetch)
+ * • додано votes / percent / count до плиток (IMDb, RT, Metacritic)
+ * • додано кольори за джерелом (незалежно від colorize_all)
+ * • покращено повідомлення про помилки API
  */
 
 (function() {
   'use strict';
-
-  /*
-  |==========================================================================
-  | localStorage shim
-  | (Фолбек, якщо localStorage вимкнено або недоступний)
-  |==========================================================================
-  */
-  (function() {
-    var ok = true;
-    try {
-      var t = '__lmp_test__';
-      window.localStorage.setItem(t, '1');
-      window.localStorage.removeItem(t);
-    } catch (e) {
-      ok = false;
-    }
-
-    if (!ok) {
-      var mem = {};
-      window.localStorage = {
-        getItem: function(k) {
-          return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null;
-        },
-        setItem: function(k, v) {
-          mem[k] = String(v);
-        },
-        removeItem: function(k) {
-          delete mem[k];
-        },
-        clear: function() {
-          mem = {};
-        }
-      };
-    }
-  })();
-
-  /*
-  |==========================================================================
-  | Promise (мінімальний поліфіл)
-  | (Достатньо для then/catch/all)
-  |==========================================================================
-  */
-  (function(global) {
-    if (global.Promise) return; // Вже є
-    var PENDING = 0,
-      FULFILLED = 1,
-      REJECTED = 2;
-
-    function asap(fn) {
-      setTimeout(fn, 0);
-    }
-
-    function MiniPromise(executor) {
-      if (!(this instanceof MiniPromise)) return new MiniPromise(executor);
-      var self = this;
-      self._state = PENDING;
-      self._value = void 0;
-      self._handlers = [];
-
-      function resolve(value) {
-        if (self._state !== PENDING) return;
-        if (value && (typeof value === 'object' || typeof value === 'function')) {
-          var then;
-          try {
-            then = value.then;
-          } catch (e) {
-            return reject(e);
-          }
-          if (typeof then === 'function') return then.call(value, resolve, reject);
-        }
-        self._state = FULFILLED;
-        self._value = value;
-        finale();
-      }
-
-      function reject(reason) {
-        if (self._state !== PENDING) return;
-        self._state = REJECTED;
-        self._value = reason;
-        finale();
-      }
-
-      function finale() {
-        asap(function() {
-          var q = self._handlers;
-          self._handlers = [];
-          for (var i = 0; i < q.length; i++) handle(q[i]);
-        });
-      }
-
-      function handle(h) {
-        if (self._state === PENDING) {
-          self._handlers.push(h);
-          return;
-        }
-        var cb = self._state === FULFILLED ? h.onFulfilled : h.onRejected;
-        if (!cb) {
-          (self._state === FULFILLED ? h.resolve : h.reject)(self._value);
-          return;
-        }
-        try {
-          var ret = cb(self._value);
-          h.resolve(ret);
-        } catch (e) {
-          h.reject(e);
-        }
-      }
-      this.then = function(onFulfilled, onRejected) {
-        return new MiniPromise(function(resolve, reject) {
-          handle({
-            onFulfilled: onFulfilled,
-            onRejected: onRejected,
-            resolve: resolve,
-            reject: reject
-          });
-        });
-      };
-      this.catch = function(onRejected) {
-        return this.then(null, onRejected);
-      };
-      try {
-        executor(resolve, reject);
-      } catch (e) {
-        reject(e);
-      }
-    }
-    MiniPromise.resolve = function(v) {
-      return new MiniPromise(function(res) {
-        res(v);
-      });
-    };
-    MiniPromise.reject = function(r) {
-      return new MiniPromise(function(_, rej) {
-        rej(r);
-      });
-    };
-    MiniPromise.all = function(arr) {
-      return new MiniPromise(function(resolve, reject) {
-        if (!arr || !arr.length) return resolve([]);
-        var out = new Array(arr.length),
-          left = arr.length;
-        for (var i = 0; i < arr.length; i++)(function(i) {
-          MiniPromise.resolve(arr[i]).then(function(v) {
-            out[i] = v;
-            if (--left === 0) resolve(out);
-          }, reject);
-        })(i);
-      });
-    };
-    global.Promise = MiniPromise;
-  })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
-
-  /*
-  |==========================================================================
-  | fetch polyfill
-  | (З урахуванням Lampa.Reguest для обходу CORS)
-  |==========================================================================
-  */
-  (function(global) {
-    if (global.fetch) return; // Вже є
-
-    function Response(body, init) {
-      this.status = init && init.status || 200;
-      this.ok = this.status >= 200 && this.status < 300;
-      this._body = body == null ? '' : String(body);
-      this.headers = (init && init.headers) || {};
-    }
-    Response.prototype.text = function() {
-      var self = this;
-      return Promise.resolve(self._body);
-    };
-    Response.prototype.json = function() {
-      var self = this;
-      return Promise.resolve().then(function() {
-        return JSON.parse(self._body || 'null');
-      });
-    };
-
-    global.fetch = function(input, init) {
-      init = init || {};
-      var url = (typeof input === 'string') ? input : (input && input.url) || '';
-      var method = (init.method || 'GET').toUpperCase();
-      var headers = init.headers || {};
-      var body = init.body || null;
-
-      // Якщо є Lampa.Reguest — використовуємо його (обхід CORS)
-      if (global.Lampa && Lampa.Reguest) {
-        return new Promise(function(resolve) {
-          new Lampa.Reguest().native(
-            url,
-            function(data) {
-              var text = (typeof data === 'string') ? data : (data != null ? JSON.stringify(data) : '');
-              resolve(new Response(text, {
-                status: 200,
-                headers: headers
-              }));
-            },
-            function() {
-              resolve(new Response('', {
-                status: 500,
-                headers: headers
-              }));
-            },
-            false, {
-              dataType: 'text',
-              method: method,
-              headers: headers,
-              data: body
-            }
-          );
-        });
-      }
-
-      // Звичайний XMLHttpRequest-фолбек
-      return new Promise(function(resolve, reject) {
-        try {
-          var xhr = new XMLHttpRequest();
-          xhr.open(method, url, true);
-          for (var k in headers) {
-            if (Object.prototype.hasOwnProperty.call(headers, k)) xhr.setRequestHeader(k, headers[k]);
-          }
-          xhr.onload = function() {
-            resolve(new Response(xhr.responseText, {
-              status: xhr.status,
-              headers: headers
-            }));
-          };
-          xhr.onerror = function() {
-            reject(new TypeError('Network request failed'));
-          };
-          xhr.send(body);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    };
-  })(typeof globalThis !== 'undefined' ? globalThis : (typeof window !== 'undefined' ? window : this));
-
-})();
-
-(function() {
-  'use strict';
-
-  /*
-  |==========================================================================
-  | 1. ШИМИ / ПОЛІФІЛИ
-  | (Для старих Android Webview)
-  |==========================================================================
-  */
-
-  // NodeList.forEach
-  if (window.NodeList && !NodeList.prototype.forEach) {
-    NodeList.prototype.forEach = function(callback, thisArg) {
-      thisArg = thisArg || window;
-      for (var i = 0; i < this.length; i++) {
-        callback.call(thisArg, this[i], i, this);
-      }
-    };
-  }
-
-  // Element.matches
-  if (!Element.prototype.matches) {
-    Element.prototype.matches =
-      Element.prototype.msMatchesSelector ||
-      Element.prototype.webkitMatchesSelector ||
-      function(selector) {
-        var node = this;
-        var nodes = (node.parentNode || document).querySelectorAll(selector);
-        for (var i = 0; i < nodes.length; i++) {
-          if (nodes[i] === node) return true;
-        }
-        return false;
-      };
-  }
-
-  // Element.closest
-  if (!Element.prototype.closest) {
-    Element.prototype.closest = function(selector) {
-      var el = this;
-      while (el && el.nodeType === 1) {
-        if (el.matches(selector)) return el;
-        el = el.parentElement || el.parentNode;
-      }
-      return null;
-    };
-  }
-
-  /*
-  |==========================================================================
-  | 2. КОНСТАНТИ ТА КОНФІГУРАЦІЯ
-  |==========================================================================
-  */
-
-  /**
-   * Конфігурація API ключів
-   */
-  var LMP_ENH_CONFIG = {
-    apiKeys: {
-      mdblist: '', // ✅ ключ до MDBList
-      omdb: '' // ✅ ключ до OMDb
-    },
-    monochromeIcons: false /*✅ Вкл./Викл. Ч/Б рейтинги */
-  };
-
-  var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/';
-
-  var ICONS = {
-
-    total_star: BASE_ICON + 'star.png',
-
-    imdb: BASE_ICON + 'imdb.png',
-    tmdb: BASE_ICON + 'tmdb.png',
-    metacritic: BASE_ICON + 'metacritic.png',
-    metascore:  BASE_ICON + 'metascore.png',
-
-    rotten_good: BASE_ICON + 'RottenTomatoes.png',
-    rotten_bad: BASE_ICON + 'RottenBad.png',
-
-    popcorn: BASE_ICON + 'PopcornGood.png',
-
-    awards: BASE_ICON + 'awards.png',
-    oscar: BASE_ICON + 'OscarGold.png',
-    emmy: BASE_ICON + 'EmmyGold.png'
-  };
-
-  Lampa.Lang.add({
-    oscars_label: {
-      uk: 'Оскар'
-    },
-    emmy_label: {
-      uk: 'Еммі'
-    },
-    awards_other_label: {
-      uk: 'Нагороди'
-    },
-    popcorn_label: {
-      uk: 'Глядачі'
-    },
-    source_tmdb: {
-      ru: 'TMDB',
-      en: 'TMDB',
-      uk: 'TMDB'
-    },
-    source_imdb: {
-      ru: 'IMDb',
-      en: 'IMDb',
-      uk: 'IMDb'
-    },
-    source_mc: {
-      ru: 'Metacritic',
-      en: 'Metacritic',
-      uk: 'Metacritic'
-    },
-    source_rt: {
-      ru: 'Rotten',
-      en: 'Rotten',
-      uk: 'Rotten'
-    }
-  });
-
 
   var pluginStyles = "<style>" +
     ".loading-dots-container {" +
@@ -527,34 +168,49 @@
 
     "body.lmp-enh--rate-border .full-start-new__rate-line, " +
     "body.lmp-enh--rate-border .full-start__rate-line{" +
-    "}"
+    "  flex-wrap: wrap;" +
+    "  gap: 0.3em;" +
+    "}" +
     "</style>";
 
+  // Мінімальні перевірки Promise та fetch
+  if (!window.Promise) {
+    console.warn('[LMP Ratings] Native Promise відсутній — дуже стара платформа');
+  }
 
-  var CACHE_TIME = 3 * 24 * 60 * 60 * 1000; // 3 дні
-  // var CACHE_TIME = 60 * 60 * 1000; // ✅ 1 година для перевірок
-  var RATING_CACHE_KEY = 'lmp_enh_rating_cache'; // Кеш рейтингів
-  var ID_MAPPING_CACHE = 'lmp_rating_id_cache'; // Кеш TMDB -> IMDb ID
-
-
-  var AGE_RATINGS = {
-    'G': '3+',
-    'PG': '6+',
-    'PG-13': '13+',
-    'R': '17+',
-    'NC-17': '18+',
-    'TV-Y': '0+',
-    'TV-Y7': '7+',
-    'TV-G': '3+',
-    'TV-PG': '6+',
-    'TV-14': '14+',
-    'TV-MA': '17+'
+  if (!window.fetch) {
+    console.warn('[LMP Ratings] Використовуємо Lampa.Reguest як фолбек для fetch');
+  }
+    // Константи та конфігурація
+  var LMP_ENH_CONFIG = {
+    apiKeys: {
+      mdblist: '',
+      omdb: ''
+    },
+    monochromeIcons: false
   };
 
+  var BASE_ICON = 'https://raw.githubusercontent.com/ko3ik/LMP/main/wwwroot/'; // або свій шлях
+
+  var ICONS = {
+    total_star: BASE_ICON + 'star.png',
+    imdb:       BASE_ICON + 'imdb.png',
+    tmdb:       BASE_ICON + 'tmdb.png',
+    metacritic: BASE_ICON + 'metacritic.png',
+    metascore:  BASE_ICON + 'metascore.png',
+    rotten_good: BASE_ICON + 'RottenTomatoes.png',
+    rotten_bad:  BASE_ICON + 'RottenBad.png',
+    popcorn:     BASE_ICON + 'PopcornGood.png',
+    awards:      BASE_ICON + 'awards.png',
+    oscar:       BASE_ICON + 'OscarGold.png',
+    emmy:        BASE_ICON + 'EmmyGold.png'
+  };
+
+  var CACHE_TIME = 3 * 24 * 60 * 60 * 1000; // 3 дні
 
   var RCFG_DEFAULT = {
-    ratings_omdb_key: (LMP_ENH_CONFIG.apiKeys.omdb || ''),
-    ratings_mdblist_key: (LMP_ENH_CONFIG.apiKeys.mdblist || ''),
+    ratings_omdb_key: '',
+    ratings_mdblist_key: '',
     ratings_bw_logos: false,
     ratings_show_awards: true,
     ratings_show_average: true,
@@ -563,138 +219,348 @@
     ratings_badge_alpha: 0.15,
     ratings_badge_tone: 0,
     ratings_gap_step: 0,
-    // Нові тумблери
-    ratings_colorize_all: false, 
+    ratings_colorize_all: false,
+    ratings_color_by_source: true,
     ratings_enable_imdb: true,
     ratings_enable_tmdb: true,
     ratings_enable_mc: true,
     ratings_enable_rt: true,
     ratings_enable_popcorn: true,
     ratings_poster_badges: false,
-    ratings_rate_border: false,
+    ratings_rate_border: false
   };
 
+  var AGE_RATINGS = {
+    'G': '3+', 'PG': '6+', 'PG-13': '13+', 'R': '17+', 'NC-17': '18+',
+    'TV-Y': '0+', 'TV-Y7': '7+', 'TV-G': '3+', 'TV-PG': '6+', 'TV-14': '14+', 'TV-MA': '17+'
+  };
 
-  var __lmpRateLineObs = null; // Спостерігач за DOM (для лоадера)
-  var currentRatingsData = null; // Кеш рейтингів для поточної картки
-  var __lmpLastReqToken = null; // Токен останнього запиту (для уникнення гонки)
-
-
-  function getCardType(card) {
-    var type = card.media_type || card.type;
-    if (type === 'movie' || type === 'tv') return type;
-    return card.name || card.original_name ? 'tv' : 'movie';
+  // Покращені повідомлення про помилки
+  function apiErrorToast(source, errorType, details = '') {
+    let msg = '';
+    switch (errorType) {
+      case 'key_missing':   msg = `API ключ для ${source} не введено в налаштуваннях`; break;
+      case 'network':       msg = `${source}: проблема з'єднання з мережею`; break;
+      case 'limit':         msg = `${source}: ліміт запитів вичерпано на сьогодні`; break;
+      case 'not_found':     msg = `${source}: дані по фільму/серіалу не знайдено (404)`; break;
+      case 'invalid_key':   msg = `${source}: невалідний або заблокований API ключ`; break;
+      case 'parse_error':   msg = `${source}: помилка обробки відповіді сервера`; break;
+      default:              msg = `${source}: не вдалося завантажити рейтинги`;
+    }
+    if (details) msg += ` (${details})`;
+    lmpToast(msg);
+    console.error('[LMP Ratings Error]', source, errorType, details);
   }
 
+  // Кольори за джерелом
+  function getSourceColorClass(source, value, extra = {}) {
+    if (!LMP_ENH_CONFIG || !LMP_ENH_CONFIG.color_by_source) return '';
 
-  (function() {
-    try {
-      var kpCss = '<style>.full-start__rate.rate--kp, .rate--kp{display:none!important;}</style>';
-      Lampa.Template.add('lmp_hide_kp', kpCss);
-      $('body').append(Lampa.Template.get('lmp_hide_kp', {}, true));
-    } catch (e) {}
-  })();
+    let v = parseFloat(value);
+    if (isNaN(v)) return '';
 
+    switch (source.toLowerCase()) {
+      case 'imdb':
+        if (v >= 8.0) return 'rating--green';
+        if (v >= 6.5) return 'rating--blue';
+        if (v >= 5.0) return 'rating--orange';
+        return 'rating--red';
 
-  function getRatingClass(rating) {
-    var r = parseFloat(rating);
-    if (isNaN(r)) return 'rating--red';
-    if (r >= 8.0) return 'rating--green'; // ≥ 8.0
-    if (r >= 6.0) return 'rating--blue'; // 6.0–7.9
-    if (r >= 4.0) return 'rating--orange'; // 4.0–5.9
-    return 'rating--red'; // < 4.0
+      case 'tmdb':
+        if (v >= 8.0) return 'rating--green';
+        if (v >= 6.0) return 'rating--blue';
+        return 'rating--orange';
+
+      case 'rottentomatoes':
+      case 'rt':
+      case 'tomato':
+        return extra.fresh ? 'rating--green' : 'rating--red';
+
+      case 'metacritic':
+      case 'mc':
+      case 'metascore':
+        let mv = v * 10;
+        if (mv >= 80) return 'rating--green';
+        if (mv >= 60) return 'rating--blue';
+        if (mv >= 40) return 'rating--orange';
+        return 'rating--red';
+
+      case 'popcorn':
+      case 'audience':
+        if (v >= 80) return 'rating--green';
+        if (v >= 60) return 'rating--blue';
+        return 'rating--orange';
+
+      default:
+        return '';
+    }
   }
 
-
-  function posterCacheKeyForCard(card) {
-    return 'poster_' + (card.type || getCardType(card)) + '_' + (card.imdb_id || card.id);
+  // Форматування чисел (1.2M, 45K)
+  function formatNumber(n) {
+    if (!n || isNaN(n)) return '?';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000)     return (n / 1000).toFixed(0)   + 'K';
+    return n.toString();
   }
+    // Оновлена функція insertRatings
+  function insertRatings(data) {
+    var render = Lampa.Activity.active().activity.render();
+    if (!render) return;
 
+    cleanupRtgInjected(render);
+    var rateLine = getPrimaryRateLine(render);
+    if (!rateLine.length) return;
 
-  function lmpRawVal(it) {
-    if (!it || typeof it !== 'object') return null;
-    var v = it.value;
-    if (v == null) v = it.score;
-    if (v == null) v = it.rating;
-    if (v == null) v = it.percent;
-    if (v == null && typeof it.display === 'string') v = it.display;
-    return v == null ? null : v;
+    var cfg = getCfg();
+
+    // IMDb
+    (function() {
+      if (!cfg.enableImdb || !data.imdb_display) return;
+
+      var text = data.imdb_display;
+      var extra = data.imdb_votes ? ` (${formatNumber(data.imdb_votes)})` : '';
+
+      var $cont = $('.rate--imdb', rateLine);
+      if (!$cont.length) {
+        $cont = $(`
+          <div class="full-start__rate rate--imdb">
+            <div>${text}${extra}</div>
+            <div class="source--name"></div>
+          </div>
+        `);
+        $cont.find('.source--name').html(iconImg(ICONS.imdb, 'IMDb', 22));
+        rateLine.append($cont);
+      } else {
+        $cont.find('> div:first').text(text + extra);
+      }
+
+      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) {
+        $cont.addClass(getSourceColorClass('imdb', data.imdb_display));
+      } else if (cfg.ratings_colorize_all) {
+        $cont.addClass(getRatingClass(parseFloat(data.imdb_for_avg || 0)));
+      }
+    })();
+
+    // Rotten Tomatoes
+    (function() {
+      if (!cfg.enableRt || !data.rt_display) return;
+
+      var text = data.rt_display + '%';
+      var extra = data.rt_audience_score ? ` | ${data.rt_audience_score}% (${formatNumber(data.rt_audience_count || '?')})` : '';
+
+      var $cont = $('.rate--rt', rateLine);
+      if (!$cont.length) {
+        $cont = $(`
+          <div class="full-start__rate rate--rt">
+            <div>${text}${extra}</div>
+            <div class="source--name"></div>
+          </div>
+        `);
+        var icon = data.rt_fresh ? ICONS.rotten_good : ICONS.rotten_bad;
+        $cont.find('.source--name').html(iconImg(icon, 'Rotten Tomatoes', 22));
+        rateLine.append($cont);
+      } else {
+        $cont.find('> div:first').text(text + extra);
+      }
+
+      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) {
+        $cont.addClass(getSourceColorClass('rt', data.rt_display, {fresh: data.rt_fresh}));
+      } else if (cfg.ratings_colorize_all) {
+        $cont.addClass(getRatingClass(data.rt_for_avg || 0));
+      }
+    })();
+
+    // Metacritic
+    (function() {
+      if (!cfg.enableMc || !data.mc_display) return;
+
+      var text = data.mc_display;
+      var extra = '';
+      if (data.mc_critic_count) {
+        extra = ` (${formatNumber(data.mc_critic_count)} критик)`;
+      } else if (data.mc_user_count) {
+        extra = ` (${formatNumber(data.mc_user_count)} глядач)`;
+      }
+
+      var $cont = $('.rate--mc', rateLine);
+      if (!$cont.length) {
+        $cont = $(`
+          <div class="full-start__rate rate--mc">
+            <div>${text}${extra}</div>
+            <div class="source--name"></div>
+          </div>
+        `);
+        $cont.find('.source--name').html(iconImg(ICONS.metascore, 'Metacritic', 22));
+        rateLine.append($cont);
+      } else {
+        $cont.find('> div:first').text(text + extra);
+      }
+
+      $cont.removeClass('rating--green rating--blue rating--orange rating--red');
+      if (cfg.ratings_color_by_source) {
+        $cont.addClass(getSourceColorClass('metacritic', data.mc_display));
+      } else if (cfg.ratings_colorize_all) {
+        $cont.addClass(getRatingClass(data.mc_for_avg || 0));
+      }
+    })();
+
+    applyStylesToAll();
   }
-
-
-  function filterMdblistLike(arr) {
-    if (!Array.isArray(arr)) return [];
-    var isCub = (Lampa.Storage.get('source') || '').toLowerCase() === 'cub';
-
-    return arr.filter(function(x) {
-      if (!x) return false;
-      var val = lmpRawVal(x);
-      if (val == null) return false;
-
-      var s = String(x.source || '').toLowerCase();
-      if (s === 'tmdb') return false;
-      if (isCub && s === 'imdb') return false;
-      return true;
-    });
-  }
-
-
-  function buildMdblistLikeArray(data) {
-
-    if (data && Array.isArray(data._mdblist_ratings) && data._mdblist_ratings.length) {
-      return data._mdblist_ratings.slice();
+    // Оновлений fetchMdbListRatings
+  function fetchMdbListRatings(card, callback) {
+    var key = LMP_ENH_CONFIG.apiKeys.mdblist;
+    if (!key) {
+      apiErrorToast('MDBList', 'key_missing');
+      return callback(null);
     }
 
-    var a = [],
-      d = data || {};
-    if (d.imdb_display) a.push({
-      source: 'imdb',
-      value: d.imdb_display
-    });
-    if (d.mc_critic_display) a.push({
-      source: 'metacritic',
-      value: d.mc_critic_display
-    });
-    if (d.mc_user_display) a.push({
-      source: 'metacritic_user',
-      value: d.mc_user_display
-    });
-    if (d.rt_display) a.push({
-      source: 'rottentomatoes',
-      value: d.rt_display
-    });
-    if (d.popcorn_display) a.push({
-      source: 'popcorn',
-      value: d.popcorn_display
-    });
-    if (d.tmdb_display) a.push({
-      source: 'tmdb',
-      value: d.tmdb_display
-    });
-    return a;
+    var typeSegment = (card.type === 'tv') ? 'show' : card.type;
+    var url = `https://api.mdblist.com/tmdb/${typeSegment}/${card.id}?apikey=${encodeURIComponent(key)}`;
+
+    new Lampa.Reguest().silent(url,
+      function(response) {
+        if (!response || !response.ratings || !Array.isArray(response.ratings)) {
+          apiErrorToast('MDBList', 'not_found', 'немає рейтингів у відповіді');
+          return callback(null);
+        }
+
+        var res = {
+          tmdb_display: null, tmdb_for_avg: null,
+          imdb_display: null, imdb_for_avg: null, imdb_votes: null,
+          mc_user_display: null, mc_user_for_avg: null, mc_user_count: null,
+          mc_critic_display: null, mc_critic_for_avg: null, mc_critic_count: null,
+          rt_display: null, rt_for_avg: null, rt_fresh: null,
+          rt_audience_score: null, rt_audience_count: null,
+          popcorn_display: null, popcorn_for_avg: null,
+          _mdblist_ratings: response.ratings.slice()
+        };
+
+        response.ratings.forEach(r => {
+          let src = (r.source || '').toLowerCase();
+          let val = parseFloat(r.value || r.score || r.percent || r.rating);
+          if (isNaN(val)) return;
+
+          if (src.includes('tmdb')) {
+            let t = val > 10 ? val / 10 : val;
+            res.tmdb_display = t.toFixed(1);
+            res.tmdb_for_avg = t;
+          }
+          if (src.includes('imdb')) {
+            let i = val > 10 ? val / 10 : val;
+            res.imdb_display = i.toFixed(1);
+            res.imdb_for_avg = i;
+            if (r.votes) res.imdb_votes = r.votes;
+          }
+          if (src.includes('metacritic') && src.includes('user')) {
+            let u = val > 10 ? val / 10 : val;
+            res.mc_user_display = u.toFixed(1);
+            res.mc_user_for_avg = u;
+            if (r.reviews || r.votes) res.mc_user_count = r.reviews || r.votes;
+          }
+          if (src.includes('metacritic') && !src.includes('user')) {
+            let c = val > 10 ? val / 10 : val;
+            res.mc_critic_display = c.toFixed(1);
+            res.mc_critic_for_avg = c;
+            if (r.reviews || r.votes) res.mc_critic_count = r.reviews || r.votes;
+          }
+          if (src.includes('rotten') || src.includes('tomato')) {
+            res.rt_display = Math.round(val).toString();
+            res.rt_for_avg = val / 10;
+            res.rt_fresh = val >= 60;
+            if (r.audience_score) res.rt_audience_score = Math.round(r.audience_score);
+            if (r.audience_votes || r.audience_count) res.rt_audience_count = r.audience_votes || r.audience_count;
+          }
+          if (src.includes('popcorn') || src.includes('audience')) {
+            res.popcorn_display = Math.round(val).toString();
+            res.popcorn_for_avg = val / 10;
+          }
+        });
+
+        callback(res);
+      },
+      function(status, err) {
+        let type = 'network';
+        if (status === 401 || status === 403) type = 'invalid_key';
+        if (status === 429) type = 'limit';
+        if (status === 404) type = 'not_found';
+        apiErrorToast('MDBList', type, err || status);
+        callback(null);
+      }
+    );
   }
 
-
-  function ensurePosterBadgeStylesOnce() {
-    if (document.getElementById('lmp-poster-badges-css')) return;
-
-    var css = `
-    /* === Бейдж одного рейтингу на постері === */
-    .card__lmerating{
-      position:absolute;
-      right:-0.8em;                     
-      padding:0.40em 0.60em;            
-      background:linear-gradient(90deg,#2c2c2c,#1a1a1a); 
-      color:#fff;
-      border-radius:0.35em;             
-      text-transform:uppercase;
-      font-size:0.80em;                 
-      line-height:1;
-      box-shadow:0 2px 6px rgba(0,0,0,.35); 
-      z-index:5;
-      pointer-events:none;
+  // fetchOmdbRatings
+  function fetchOmdbRatings(card, callback) {
+    var key = LMP_ENH_CONFIG.apiKeys.omdb;
+    if (!key || !card.imdb_id) {
+      if (!key) apiErrorToast('OMDb', 'key_missing');
+      if (!card.imdb_id) console.warn('[LMP Ratings] OMDb: відсутній IMDb ID');
+      return callback(null);
     }
-    @media (max-width:768px){
-      .card__lmerating{ right:.2em; font-size:.74em; }
-    }
-    @medi
+
+    var typeParam = card.type === 'tv' ? '&type=series' : '';
+    var url = `https://www.omdbapi.com/?apikey=${encodeURIComponent(key)}&i=${encodeURIComponent(card.imdb_id)}${typeParam}`;
+
+    new Lampa.Reguest().silent(url, function(data) {
+      if (!data || data.Response !== 'True') {
+        const errorText = (data && data.Error ? data.Error.toLowerCase() : '');
+        const type = errorText.includes('incorrect') ? 'invalid_key' :
+                     errorText.includes('not found') ? 'not_found' :
+                     !data ? 'network' : 'unknown';
+        apiErrorToast('OMDb', type, data.Error || '');
+        return callback(null);
+      }
+
+      var awardsParsed = parseAwards(data.Awards || '');
+      var rtScore = null, mcScore = null;
+
+      if (Array.isArray(data.Ratings)) {
+        data.Ratings.forEach(r => {
+          if (r.Source === 'Rotten Tomatoes') {
+            rtScore = parseInt((r.Value || '').replace('%', '')) || null;
+          }
+          if (r.Source === 'Metacritic') {
+            mcScore = parseInt((r.Value || '').split('/')[0]) || null;
+          }
+        });
+      }
+
+      var res = {
+        imdb_display: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating).toFixed(1) : null,
+        imdb_for_avg: data.imdbRating !== 'N/A' ? parseFloat(data.imdbRating) : null,
+        imdb_votes: data.imdbVotes !== 'N/A' ? parseInt(data.imdbVotes.replace(/,/g, '')) : null,
+        mc_critic_display: mcScore ? (mcScore / 10).toFixed(1) : null,
+        mc_critic_for_avg: mcScore ? (mcScore / 10) : null,
+        rt_display: rtScore ? rtScore.toString() : null,
+        rt_for_avg: rtScore ? rtScore / 10 : null,
+        rt_fresh: rtScore ? rtScore >= 60 : null,
+        ageRating: data.Rated !== 'N/A' ? data.Rated : null,
+        oscars: awardsParsed.oscars,
+        emmy: awardsParsed.emmy,
+        awards: awardsParsed.awards
+      };
+
+      callback(res);
+    }, function() {
+      apiErrorToast('OMDb', 'network');
+      callback(null);
+    });
+  }
+    // Запуск плагіну
+  Lampa.Template.add('lmp_enh_styles', pluginStyles);
+  $('body').append(Lampa.Template.get('lmp_enh_styles', {}, true));
+
+  initRatingsPluginUI();
+  refreshConfigFromStorage();
+
+  window.addEventListener('resize', reapplyOnResize);
+  window.addEventListener('orientationchange', reapplyOnResize);
+
+  if (!window.combined_ratings_plugin) {
+    startPlugin();
+  }
+
+})();
