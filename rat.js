@@ -29,7 +29,7 @@
         if (!val || val === 0) return '#fff';
         if (val < 3) return '#ff4d4d';
         else if (val < 5) return '#ff9f43';
-        else if (val < 7.5) return '#feca57';
+        else if (val < 7.5) return '#ffff00';
         else return '#2ecc71';
     }
 
@@ -109,7 +109,7 @@
                         
                         if (oscarsMatch && parseInt(oscarsMatch[1]) > 0) {
                             if ($('.rate--omdb-oscar', render).length === 0) {
-                                var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#feca57');
+                                var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#ffff00');
                                 anchor.before(oscarBlock);
                             }
                         }
@@ -221,7 +221,7 @@ function getRatingColor(rating) {
     if (!val || val === 0) return '#ffffff';
     if (val < 5) return '#ff4d4d';      // червоний
     if (val < 6.5) return '#ff9f43';    // оранжевий
-    if (val < 8) return '#feca57';       // жовтий
+    if (val < 8) return '#ffff00';       // жовтий
     return '#2ecc71';                    // зелений
 }
 
