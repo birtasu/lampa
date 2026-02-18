@@ -314,8 +314,8 @@
 
   function formatNumber(n) {
     if (!n || isNaN(n)) return '?';
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-    if (n >= 1_000)     return (n / 1_000).toFixed(0)   + 'K';
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000)     return (n / 1000).toFixed(0)   + 'K';
     return n.toString();
   }
 
@@ -538,10 +538,14 @@
     var url = `https://www.omdbapi.com/?apikey=\( {encodeURIComponent(key)}&i= \){encodeURIComponent(card.imdb_id)}${typeParam}`;
 
     new Lampa.Reguest().silent(url, function(data) {
-      if (!data || data.Response !== 'True') {
-        let type = data.Error?.includes('Incorrect') ? 'invalid_key' :
-                   data.Error?.includes('not found') ? 'not_found' : 'network';
+      if (!data || data.Response !== 'True') {        
+        const errorText = (data && data.Error ? data.Error.toLowerCase() : '');
+
+        const type = errorText.includes('incorrect') ? 'invalid_key' :
+             errorText.includes('not found') ? 'not_found' : 
+             !data ? 'network' : 'unknown';
         apiErrorToast('OMDb', type, data.Error || '');
+
         return callback(null);
       }
 
