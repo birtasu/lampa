@@ -10,8 +10,14 @@
         .custom-rating div { font-weight: bold; line-height: 1; font-size: 1em !important; }\
         .rate--kp { display: none !important; }\
         .omdb-api-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
+        .imdb-id-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
+        .manual-imdb-id { margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 4px; display: none; }\
+        .manual-imdb-id.active { display: block; }\
+        .manual-imdb-id .title { font-size: 1.1em; margin-bottom: 5px; }\
+        .manual-imdb-id .input { width: 100%; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; }\
+        .manual-imdb-id .save-btn { margin-top: 10px; padding: 8px 15px; background: #2ecc71; border: none; color: #fff; border-radius: 4px; cursor: pointer; }\
+        .manual-imdb-id .save-btn:hover { background: #27ae60; }\
         div[data-component="' + COMPONENT_NAME + '"] { display: none !important; }\
-        .rating-error { color: #ff6b6b; font-size: 0.8em; margin-left: 10px; }\
     </style>');
     $('body').append(style);
 
@@ -22,29 +28,7 @@
         tmdb: 'https://upload.wikimedia.org/wikipedia/commons/8/89/Tmdb.new.logo.svg',
         cub: 'https://raw.githubusercontent.com/yumata/lampa/9381985ad4371d2a7d5eb5ca8e3daf0f32669eb7/img/logo-icon.svg',
         oscar: 'https://upload.wikimedia.org/wikipedia/commons/f/f8/Oscar_gold_silhouette.svg',
-        award: 'https://upload.wikimedia.org/wikipedia/commons/e/e8/Barnstar_film_3.svg',
-        kinopoisk: 'https://upload.wikimedia.org/wikipedia/commons/2/24/Kinopoisk_logo_2022.svg',
-        filmweb: 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Filmweb_logo.svg',
-        filmstarts: 'https://upload.wikimedia.org/wikipedia/commons/3/33/Filmstarts_logo.svg',
-        senscritique: 'https://upload.wikimedia.org/wikipedia/commons/a/a2/SensCritique_logo.svg',
-        allocine: 'https://upload.wikimedia.org/wikipedia/commons/8/8a/AlloCin%C3%A9_logo.svg',
-        douban: 'https://upload.wikimedia.org/wikipedia/commons/9/93/Douban_logo.svg',
-        mydramalist: 'https://upload.wikimedia.org/wikipedia/commons/3/3e/MyDramaList_logo.svg',
-        anilist: 'https://upload.wikimedia.org/wikipedia/commons/6/61/AniList_logo.svg',
-        myanimelist: 'https://upload.wikimedia.org/wikipedia/commons/7/7a/MyAnimeList_logo.png',
-        letterboxd: 'https://upload.wikimedia.org/wikipedia/commons/2/2a/Letterboxd_logo.svg',
-        trakt: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Trakt_logo.svg',
-        film_affinity: 'https://upload.wikimedia.org/wikipedia/commons/9/95/FilmAffinity_logo.svg',
-        csfd: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/CSFD_logo.svg',
-        port: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Port.hu_logo.svg',
-        filmpolski: 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Filmpolski_logo.svg',
-        filmweb_pl: 'https://upload.wikimedia.org/wikipedia/commons/3/3c/Filmweb_logo.svg',
-        filmstarts_de: 'https://upload.wikimedia.org/wikipedia/commons/3/33/Filmstarts_logo.svg',
-        moviepilot: 'https://upload.wikimedia.org/wikipedia/commons/5/5e/Moviepilot_logo.svg',
-        kinozeit: 'https://upload.wikimedia.org/wikipedia/commons/8/8a/Kinozeit_logo.svg',
-        filmstarts_ch: 'https://upload.wikimedia.org/wikipedia/commons/3/33/Filmstarts_logo.svg',
-        filmstarts_at: 'https://upload.wikimedia.org/wikipedia/commons/3/33/Filmstarts_logo.svg',
-        moviebreak: 'https://upload.wikimedia.org/wikipedia/commons/6/6e/Moviebreak_logo.svg'
+        award: 'https://upload.wikimedia.org/wikipedia/commons/e/e8/Barnstar_film_3.svg'
     };
 
     function getColor(rating) {
@@ -94,162 +78,48 @@
         return null;
     }
 
-    function fetchAlternativeRatings(imdb_id, title, year, render, anchor) {
-        // The Movie Database (TMDB) вже є
-        // Додаємо Kinopoisk
-        if (imdb_id) {
-            $.getJSON('https://api.kinopoisk.dev/v1.4/movie?imdbId=' + imdb_id, function(data) {
-                if (data && data.docs && data.docs[0] && data.docs[0].rating && data.docs[0].rating.kp) {
-                    addRatingBlock(anchor, 'rate--kinopoisk', icons.kinopoisk, data.docs[0].rating.kp.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Kinopoisk API error');
-            });
-        }
+    function getManualImdbId(movieId) {
+        return Lampa.Storage.get('manual_imdb_' + movieId, '');
+    }
 
-        // Letterboxd
-        if (imdb_id) {
-            $.getJSON('https://api.letterboxd.com/api/v2/film/imdb/' + imdb_id, function(data) {
-                if (data && data.rating && data.rating.value) {
-                    addRatingBlock(anchor, 'rate--letterboxd', icons.letterboxd, data.rating.value.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Letterboxd API error');
-            });
+    function saveManualImdbId(movieId, imdbId) {
+        if (imdbId) {
+            Lampa.Storage.set('manual_imdb_' + movieId, imdbId);
+        } else {
+            LampaStorage.remove('manual_imdb_' + movieId);
         }
+    }
 
-        // Trakt
-        if (imdb_id) {
-            $.getJSON('https://api.trakt.tv/movies/' + imdb_id + '?extended=full', function(data) {
-                if (data && data.rating) {
-                    addRatingBlock(anchor, 'rate--trakt', icons.trakt, data.rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Trakt API error');
-            });
-        }
-
-        // MyAnimeList (для аніме)
-        if (title) {
-            $.getJSON('https://api.myanimelist.net/v2/anime?q=' + encodeURIComponent(title), function(data) {
-                if (data && data.data && data.data[0] && data.data[0].node && data.data[0].node.mean) {
-                    addRatingBlock(anchor, 'rate--myanimelist', icons.myanimelist, data.data[0].node.mean.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('MyAnimeList API error');
-            });
-        }
-
-        // AniList
-        if (title) {
-            var query = `
-            query ($search: String) {
-                Media(search: $search, type: ANIME) {
-                    averageScore
-                }
-            }`;
-            
-            $.ajax({
-                url: 'https://graphql.anilist.co',
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-                data: JSON.stringify({
-                    query: query,
-                    variables: { search: title }
-                }),
-                success: function(data) {
-                    if (data && data.data && data.data.Media && data.data.Media.averageScore) {
-                        addRatingBlock(anchor, 'rate--anilist', icons.anilist, (data.data.Media.averageScore / 10).toFixed(1));
-                    }
-                }
-            });
-        }
-
-        // Douban
-        if (title && year) {
-            $.getJSON('https://api.douban.com/v2/movie/search?q=' + encodeURIComponent(title) + '&year=' + year, function(data) {
-                if (data && data.subjects && data.subjects[0] && data.subjects[0].rating && data.subjects[0].rating.average) {
-                    addRatingBlock(anchor, 'rate--douban', icons.douban, data.subjects[0].rating.average.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Douban API error');
-            });
-        }
-
-        // MyDramaList
-        if (title) {
-            $.getJSON('https://api.mydramalist.com/v1/shows?search=' + encodeURIComponent(title), function(data) {
-                if (data && data.data && data.data[0] && data.data[0].rating) {
-                    addRatingBlock(anchor, 'rate--mydramalist', icons.mydramalist, data.data[0].rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('MyDramaList API error');
-            });
-        }
-
-        // FilmAffinity
-        if (title) {
-            $.getJSON('https://www.filmaffinity.com/api/film/search?q=' + encodeURIComponent(title), function(data) {
-                if (data && data.films && data.films[0] && data.films[0].rating) {
-                    addRatingBlock(anchor, 'rate--filmaffinity', icons['film_affinity'], data.films[0].rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('FilmAffinity API error');
-            });
-        }
-
-        // CSFD
-        if (title) {
-            $.getJSON('https://api.csfd.cz/v2/films?search=' + encodeURIComponent(title), function(data) {
-                if (data && data.data && data.data[0] && data.data[0].rating) {
-                    addRatingBlock(anchor, 'rate--csfd', icons.csfd, data.data[0].rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('CSFD API error');
-            });
-        }
-
-        // Port.hu
-        if (title) {
-            $.getJSON('https://api.port.hu/v1/search?q=' + encodeURIComponent(title), function(data) {
-                if (data && data.results && data.results[0] && data.results[0].rating) {
-                    addRatingBlock(anchor, 'rate--port', icons.port, data.results[0].rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Port.hu API error');
-            });
-        }
-
-        // Filmweb.pl
-        if (title) {
-            $.getJSON('https://api.filmweb.pl/api/v1/films/search?q=' + encodeURIComponent(title), function(data) {
-                if (data && data.items && data.items[0] && data.items[0].rate) {
-                    addRatingBlock(anchor, 'rate--filmweb_pl', icons.filmweb_pl, data.items[0].rate.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Filmweb.pl API error');
-            });
-        }
-
-        // Filmstarts.de
-        if (title) {
-            $.getJSON('https://www.filmstarts.de/api/film/search?q=' + encodeURIComponent(title), function(data) {
-                if (data && data.results && data.results[0] && data.results[0].rating) {
-                    addRatingBlock(anchor, 'rate--filmstarts_de', icons.filmstarts_de, data.results[0].rating.toFixed(1));
-                }
-            }).fail(function() {
-                console.log('Filmstarts.de API error');
-            });
-        }
+    function showManualImdbInput(movieId, currentImdbId, callback) {
+        var inputHtml = $('<div class="manual-imdb-id active">\
+            <div class="title">Введіть IMDb ID для цього фільму:</div>\
+            <input type="text" class="input" placeholder="наприклад: tt0111161" value="' + (currentImdbId || '') + '">\
+            <button class="save-btn">Зберегти</button>\
+        </div>');
+        
+        inputHtml.find('.save-btn').on('click', function() {
+            var value = inputHtml.find('.input').val().trim();
+            callback(value);
+            inputHtml.remove();
+        });
+        
+        $('body').append(inputHtml);
     }
 
     function updateRatings(e) {
         var render = e.object.activity.render();
         var movie = e.data.movie;
         var size = getRatingSize();
+
+        // Додаємо рейтинг Лампи (Cub)
+        var cubVal = getCubRating(e);
+        if (cubVal) {
+            var anchor = $('.rate--tmdb', render);
+            if (anchor.length === 0) anchor = $('.full-start__rates', render).find('div').first();
+            if (anchor.length > 0) {
+                addRatingBlock(anchor, 'rate--cub-custom', icons.cub, cubVal);
+            }
+        }
 
         $('.rate--tmdb', render).each(function() {
             var $this = $(this);
@@ -268,18 +138,27 @@
         if (anchor.length === 0) anchor = $('.full-start__rates', render).find('div').first();
         if (anchor.length === 0) return;
 
-        var cubVal = getCubRating(e);
-        if (cubVal) addRatingBlock(anchor, 'rate--cub-custom', icons.cub, cubVal);
-
+        // Отримуємо IMDb ID з різних джерел
         var imdb_id = movie.imdb_id || (movie.external_ids ? movie.external_ids.imdb_id : '');
-        var title = movie.title || movie.name || movie.original_title || movie.original_name;
-        var year = movie.year || movie.release_date ? movie.release_date.split('-')[0] : '';
+        var manualImdbId = getManualImdbId(movie.id);
+        
+        // Якщо є ручний ID, використовуємо його
+        if (manualImdbId && !imdb_id) {
+            imdb_id = manualImdbId;
+        }
 
         var requestOMDB = function(id) {
             var key = Lampa.Storage.get('omdb_api_key', '');
             if (!key) return;
+            
             $.getJSON('https://www.omdbapi.com/?apikey=' + key + '&i=' + id, function(data) {
                 if (data && data.Response !== "False") {
+                    // Додаємо IMDb рейтинг
+                    if (data.imdbRating && data.imdbRating !== 'N/A') {
+                        addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
+                    }
+
+                    // Додаємо нагороди
                     if (data.Awards && data.Awards !== "N/A") {
                         var oscarsMatch = data.Awards.match(/Won (\d+) Oscar/i);
                         var winsMatch = data.Awards.match(/(\d+) win/i);
@@ -299,24 +178,44 @@
                         }
                     }
 
-                    if (data.Metascore && data.Metascore !== 'N/A') addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                    // Додаємо Metascore
+                    if (data.Metascore && data.Metascore !== 'N/A') {
+                        addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                    }
+
+                    // Додаємо Rotten Tomatoes
                     var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
-                    if (rt) addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
-                    if (data.imdbRating && data.imdbRating !== 'N/A') addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
+                    if (rt) {
+                        addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
+                    }
                 }
             });
         };
 
         if (imdb_id) {
             requestOMDB(imdb_id);
-            fetchAlternativeRatings(imdb_id, title, year, render, anchor);
         } else if (movie.id) {
             var type = (e.object.method === 'tv' || movie.number_of_seasons) ? 'tv' : 'movie';
             if (window.Lampa && Lampa.Network && Lampa.TMDB) {
                 Lampa.Network.silent(Lampa.TMDB.api(type + '/' + movie.id + '/external_ids?api_key=' + Lampa.TMDB.key()), function (res) {
                     if (res && res.imdb_id) {
                         requestOMDB(res.imdb_id);
-                        fetchAlternativeRatings(res.imdb_id, title, year, render, anchor);
+                    } else {
+                        // Якщо ID не знайдено, показуємо кнопку для ручного введення
+                        var $infoBlock = $('<div class="full-start__rate" style="cursor: pointer; opacity: 0.7;" title="Натисніть щоб додати IMDb ID">➕ IMDb</div>');
+                        anchor.after($infoBlock);
+                        
+                        $infoBlock.one('click', function() {
+                            $(this).remove();
+                            showManualImdbInput(movie.id, '', function(newId) {
+                                if (newId) {
+                                    saveManualImdbId(movie.id, newId);
+                                    Lampa.Notice.show('ID збережено: ' + newId, 2000);
+                                    // Перезавантажуємо сторінку для оновлення рейтингів
+                                    setTimeout(function() { location.reload(); }, 1500);
+                                }
+                            });
+                        });
                     }
                 });
             }
@@ -371,6 +270,38 @@
                         Lampa.Storage.set('omdb_api_key', newValue);
                         valEl.text(newValue || 'Не встановлено');
                     });
+                });
+            }
+        });
+
+        Lampa.SettingsApi.addParam({
+            component: COMPONENT_NAME,
+            param: { name: "omdb_manual_ids", type: "static" },
+            field: { name: "Керування IMDb ID", description: "Переглянути/очистити збережені ID" },
+            onRender: function (item) {
+                var count = 0;
+                // Підраховуємо кількість збережених ID
+                for (var key in Lampa.Storage.storage) {
+                    if (key.startsWith('manual_imdb_')) count++;
+                }
+                
+                var valEl = $('<div class="imdb-id-val">Збережено: ' + count + '</div>');
+                item.find('.settings-param__descr').after(valEl);
+                
+                item.on('hover:enter', function() {
+                    if (count > 0) {
+                        if (confirm('Очистити всі збережені IMDb ID?')) {
+                            for (var key in Lampa.Storage.storage) {
+                                if (key.startsWith('manual_imdb_')) {
+                                    Lampa.Storage.remove(key);
+                                }
+                            }
+                            valEl.text('Збережено: 0');
+                            Lampa.Notice.show('Всі ID очищено', 2000);
+                        }
+                    } else {
+                        Lampa.Notice.show('Немає збережених ID', 2000);
+                    }
                 });
             }
         });
