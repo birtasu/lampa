@@ -1044,7 +1044,7 @@ function buildInfoPanel(details, movie, isTvShow, originalDetails) {
   }).length : 0)) || 0;
 
   if (isTvShow && seasonsCount > 0) {
-    row4.append(
+    row1.append(
       $('<span>').text('Сезони: ' + seasonsCount).css(badgeCss(colors.seasons.bg, colors.seasons.text))
     );
   }
