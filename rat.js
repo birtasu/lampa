@@ -11,8 +11,23 @@
         .rate--kp { display: none !important; }\
         .omdb-api-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
         div[data-component="' + COMPONENT_NAME + '"] { display: none !important; }\
-        /* Стилі для кольорових рейтингів на головній */\
-        .main-page-rating-colored { transition: color 0.3s ease; }\
+        \
+        /* АГРЕСИВНІ СТИЛІ ДЛЯ КОЛЬОРОВИХ РЕЙТИНГІВ - ПЕРЕБИВАЮТЬ ВСЕ */\
+        .main-page-rating-colored,\
+        .main-page-rating-colored *,\
+        .card-film__rating.main-page-rating-colored,\
+        .full-start__rate.main-page-rating-colored,\
+        .rate--tmdb.main-page-rating-colored,\
+        .rate--kp.main-page-rating-colored,\
+        div[class*="rating"].main-page-rating-colored,\
+        div[class*="rate"].main-page-rating-colored {\
+            color: var(--rating-color, #ffffff) !important;\
+            fill: var(--rating-color, #ffffff) !important;\
+            stroke: var(--rating-color, #ffffff) !important;\
+            text-shadow: none !important;\
+            background: none !important;\
+            -webkit-text-fill-color: var(--rating-color, #ffffff) !important;\
+        }\
     </style>');
     $('body').append(style);
 
@@ -245,9 +260,10 @@
             '.rate--kp',
             '.card-film .rating',
             '.movie-card .rating',
-            '[class*="rating"]',  // будь-який клас що містить "rating"
             '.item .rate',
-            '.poster .rate'
+            '.poster .rate',
+            '[class*="rating"]:not(.main-page-rating-colored)',
+            '[class*="rate"]:not(.main-page-rating-colored)'
         ];
         
         var found = 0;
@@ -255,6 +271,10 @@
         selectors.forEach(function(selector) {
             $(selector).each(function() {
                 var $this = $(this);
+                
+                // Пропускаємо якщо вже оброблено
+                if ($this.hasClass('main-page-rating-colored')) return;
+                
                 var ratingText = $this.text().trim();
                 
                 // Шукаємо число в тексті
@@ -264,11 +284,14 @@
                     if (rating > 0 && rating <= 10) {  // переконуємось що це рейтинг
                         var color = getMainPageRatingColor(rating);
                         
-                        // Застосовуємо колір з !important щоб перебити стандартні стилі
-                        $this.css('cssText', 'color: ' + color + ' !important');
-                        
                         // Додаємо клас
                         $this.addClass('main-page-rating-colored');
+                        
+                        // Встановлюємо CSS змінну для кольору
+                        $this.css('--rating-color', color);
+                        
+                        // Додаємо inline style з !important через атрибут style
+                        $this.attr('style', 'color: ' + color + ' !important; ' + ($this.attr('style') || ''));
                         
                         found++;
                         
@@ -283,17 +306,29 @@
         }
     }
     
+    // Функція примусового застосування стилів кожну секунду
+    function forceApplyColors() {
+        $('.main-page-rating-colored').each(function() {
+            var $this = $(this);
+            var color = $this.css('--rating-color');
+            if (color) {
+                // Примусово застосовуємо колір
+                $this[0].style.setProperty('color', color, 'important');
+            }
+        });
+    }
+    
     // Запускаємо одразу після завантаження DOM
     $(document).ready(function() {
+        updateMainPageRatings();
         setTimeout(updateMainPageRatings, 500);
         setTimeout(updateMainPageRatings, 1500);
         setTimeout(updateMainPageRatings, 3000);
     });
     
-    // Спостерігач за змінами в DOM (для динамічного контенту)
+    // Спостерігач за змінами в DOM
     var observer = new MutationObserver(function(mutations) {
-        // Запускаємо з невеликою затримкою після змін
-        setTimeout(updateMainPageRatings, 100);
+        updateMainPageRatings();
     });
     
     // Спостерігаємо за всім body
@@ -301,18 +336,16 @@
         childList: true,
         subtree: true,
         attributes: true,
-        characterData: true
+        attributeFilter: ['class', 'style']
     });
     
     // Оновлюємо при скролі
     $(window).on('scroll', function() {
-        setTimeout(updateMainPageRatings, 50);
+        updateMainPageRatings();
     });
     
-    // Також оновлюємо при зміні розміру вікна
-    $(window).on('resize', function() {
-        setTimeout(updateMainPageRatings, 100);
-    });
+    // Примусово застосовуємо кольори кожні 2 секунди
+    setInterval(forceApplyColors, 2000);
     
     console.log('Скрипт кольорів рейтингів на головній активовано');
     
