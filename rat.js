@@ -11,6 +11,8 @@
         .rate--kp { display: none !important; }\
         .omdb-api-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
         div[data-component="' + COMPONENT_NAME + '"] { display: none !important; }\
+        /* Стилі для кольорових рейтингів на головній */\
+        .main-page-rating-colored { transition: color 0.3s ease; }\
     </style>');
     $('body').append(style);
 
@@ -219,63 +221,102 @@
         });
     }
 
-    // ============ НОВИЙ КОД ДЛЯ КОЛЬОРІВ НА ГОЛОВНІЙ ============
+    // ============ ПОКРАЩЕНИЙ КОД ДЛЯ КОЛЬОРІВ НА ГОЛОВНІЙ ============
     
     // Функція для отримання кольору залежно від рейтингу
     function getMainPageRatingColor(rating) {
         var val = parseFloat(rating);
         if (!val || val === 0) return '#ffffff';
-        if (val < 5) return '#ff4d4d';      // червоний для низьких
-        if (val < 6.5) return '#ff9f43';    // оранжевий для середніх
-        if (val < 8) return '#feca57';       // жовтий для хороших
-        return '#2ecc71';                    // зелений для відмінних
+        if (val < 5) return '#ff4d4d';      // червоний
+        if (val < 6.5) return '#ff9f43';    // оранжевий
+        if (val < 8) return '#feca57';       // жовтий
+        return '#2ecc71';                    // зелений
     }
     
     // Функція оновлення кольорів рейтингів на головній
     function updateMainPageRatings() {
-        // Знаходимо всі рейтинги на головній
-        $('.card-film__rating, .full-start__rate, .rate--tmdb, .rate--kp').each(function() {
-            var $this = $(this);
-            var ratingText = $this.text().trim();
-            
-            // Парсимо число з тексту
-            var ratingMatch = ratingText.match(/(\d+\.?\d*)/);
-            if (ratingMatch) {
-                var rating = parseFloat(ratingMatch[1]);
-                var color = getMainPageRatingColor(rating);
+        console.log('Шукаємо рейтинги на головній...');
+        
+        // Спробуємо різні селектори, які можуть бути в Lampa
+        var selectors = [
+            '.card-film__rating',
+            '.full-start__rate',
+            '.rate--tmdb',
+            '.rate--kp',
+            '.card-film .rating',
+            '.movie-card .rating',
+            '[class*="rating"]',  // будь-який клас що містить "rating"
+            '.item .rate',
+            '.poster .rate'
+        ];
+        
+        var found = 0;
+        
+        selectors.forEach(function(selector) {
+            $(selector).each(function() {
+                var $this = $(this);
+                var ratingText = $this.text().trim();
                 
-                // Застосовуємо колір
-                $this.css('color', color);
-                
-                // Додаємо клас для можливого подальшого стилізування
-                $this.addClass('colored-rating');
-            }
+                // Шукаємо число в тексті
+                var ratingMatch = ratingText.match(/(\d+\.?\d*)/);
+                if (ratingMatch) {
+                    var rating = parseFloat(ratingMatch[1]);
+                    if (rating > 0 && rating <= 10) {  // переконуємось що це рейтинг
+                        var color = getMainPageRatingColor(rating);
+                        
+                        // Застосовуємо колір з !important щоб перебити стандартні стилі
+                        $this.css('cssText', 'color: ' + color + ' !important');
+                        
+                        // Додаємо клас
+                        $this.addClass('main-page-rating-colored');
+                        
+                        found++;
+                        
+                        console.log('Знайдено рейтинг:', ratingText, '→ колір:', color);
+                    }
+                }
+            });
         });
+        
+        if (found > 0) {
+            console.log('Оновлено кольорів для', found, 'рейтингів');
+        }
     }
     
-    // Спостерігач за змінами в DOM
-    var observer = new MutationObserver(function(mutations) {
-        updateMainPageRatings();
+    // Запускаємо одразу після завантаження DOM
+    $(document).ready(function() {
+        setTimeout(updateMainPageRatings, 500);
+        setTimeout(updateMainPageRatings, 1500);
+        setTimeout(updateMainPageRatings, 3000);
     });
     
-    // Починаємо спостереження за змінами в body
+    // Спостерігач за змінами в DOM (для динамічного контенту)
+    var observer = new MutationObserver(function(mutations) {
+        // Запускаємо з невеликою затримкою після змін
+        setTimeout(updateMainPageRatings, 100);
+    });
+    
+    // Спостерігаємо за всім body
     observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
+        attributes: true,
+        characterData: true
     });
-    
-    // Перше оновлення при завантаженні
-    setTimeout(updateMainPageRatings, 1000);
-    setTimeout(updateMainPageRatings, 3000);
     
     // Оновлюємо при скролі
     $(window).on('scroll', function() {
+        setTimeout(updateMainPageRatings, 50);
+    });
+    
+    // Також оновлюємо при зміні розміру вікна
+    $(window).on('resize', function() {
         setTimeout(updateMainPageRatings, 100);
     });
     
     console.log('Скрипт кольорів рейтингів на головній активовано');
     
-    // ============ КІНЕЦЬ НОВОГО КОДУ ============
+    // ============ КІНЕЦЬ ПОКРАЩЕНОГО КОДУ ============
 
     if (!window.lampa_omdb_plugin_loaded) startPlugin();
 })();
