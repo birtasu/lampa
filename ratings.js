@@ -1,20 +1,23 @@
 (function() {
   'use strict';
 
-  console.log('[TEST RTG] Плагін завантажився успішно');
+  console.log('[RTG TEST] Плагін завантажився без помилок');
 
   var pluginStyles = "<style>" +
     ":root { --lmp-test-color: #00ff00; }" +
     ".full-start__rate { color: var(--lmp-test-color) !important; font-weight: bold; }" +
-    "</style>";
+  "</style>";
 
-  Lampa.Template.add('test_styles', pluginStyles);
-  $('body').append(Lampa.Template.get('test_styles', {}, true));
+  Lampa.Template.add('lmp_test_styles', pluginStyles);
+  $('body').append(Lampa.Template.get('lmp_test_styles', {}, true));
 
-  // Просто тестовий вивід
-  lmpToast('Тестовий плагін RTG працює!');
+  lmpToast('Тест 1: Стилі та toast працюють');
 
-  // Якщо є функція запуску — викликаємо
-  if (typeof startPlugin === 'function') startPlugin();
+  // Перевірка наявності потрібних функцій Lampa
+  if (typeof Lampa.Activity === 'undefined') {
+    lmpToast('Помилка: Lampa.Activity відсутній');
+  } else {
+    lmpToast('Тест 2: Lampa.Activity присутній');
+  }
 
 })();
