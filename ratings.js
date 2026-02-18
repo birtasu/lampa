@@ -1,12 +1,12 @@
 /**
  * Lampa: Enhanced Ratings (MDBList + OMDb) + Poster Badges
- * Стабільна версія для Lampa 3.1.6 - без backtick, протестовано
+ * Стабільна версія для Lampa 3.1.6 — без backtick-ів, працює
  */
 
 (function() {
   'use strict';
 
-  console.log('[RTG] Плагін завантажився - версія стабільна');
+  console.log('[RTG] Плагін завантажився');
 
   var pluginStyles = '<style>' +
     '.loading-dots-container{display:flex;align-items:center;font-size:0.85em;color:#ccc;padding:0.6em 1em;border-radius:0.5em;}' +
