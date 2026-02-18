@@ -34,7 +34,7 @@
         myanimelist: 'https://upload.wikimedia.org/wikipedia/commons/7/7a/MyAnimeList_logo.png',
         letterboxd: 'https://upload.wikimedia.org/wikipedia/commons/2/2a/Letterboxd_logo.svg',
         trakt: 'https://upload.wikimedia.org/wikipedia/commons/c/c6/Trakt_logo.svg',
-        film affinity: 'https://upload.wikimedia.org/wikipedia/commons/9/95/FilmAffinity_logo.svg',
+        film_affinity: 'https://upload.wikimedia.org/wikipedia/commons/9/95/FilmAffinity_logo.svg',
         csfd: 'https://upload.wikimedia.org/wikipedia/commons/3/3b/CSFD_logo.svg',
         port: 'https://upload.wikimedia.org/wikipedia/commons/d/d5/Port.hu_logo.svg',
         filmpolski: 'https://upload.wikimedia.org/wikipedia/commons/8/8f/Filmpolski_logo.svg',
@@ -194,7 +194,7 @@
         if (title) {
             $.getJSON('https://www.filmaffinity.com/api/film/search?q=' + encodeURIComponent(title), function(data) {
                 if (data && data.films && data.films[0] && data.films[0].rating) {
-                    addRatingBlock(anchor, 'rate--filmaffinity', icons['film affinity'], data.films[0].rating.toFixed(1));
+                    addRatingBlock(anchor, 'rate--filmaffinity', icons['film_affinity'], data.films[0].rating.toFixed(1));
                 }
             }).fail(function() {
                 console.log('FilmAffinity API error');
