@@ -10,13 +10,6 @@
         .custom-rating div { font-weight: bold; line-height: 1; font-size: 1em !important; }\
         .rate--kp { display: none !important; }\
         .omdb-api-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
-        .imdb-id-val { margin-left: auto; font-size: 0.9em; opacity: 0.7; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 10px; }\
-        .manual-imdb-id { margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.3); border-radius: 4px; display: none; }\
-        .manual-imdb-id.active { display: block; }\
-        .manual-imdb-id .title { font-size: 1.1em; margin-bottom: 5px; }\
-        .manual-imdb-id .input { width: 100%; padding: 8px; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: #fff; border-radius: 4px; }\
-        .manual-imdb-id .save-btn { margin-top: 10px; padding: 8px 15px; background: #2ecc71; border: none; color: #fff; border-radius: 4px; cursor: pointer; }\
-        .manual-imdb-id .save-btn:hover { background: #27ae60; }\
         div[data-component="' + COMPONENT_NAME + '"] { display: none !important; }\
     </style>');
     $('body').append(style);
@@ -78,48 +71,53 @@
         return null;
     }
 
-    function getManualImdbId(movieId) {
-        return Lampa.Storage.get('manual_imdb_' + movieId, '');
-    }
-
-    function saveManualImdbId(movieId, imdbId) {
-        if (imdbId) {
-            Lampa.Storage.set('manual_imdb_' + movieId, imdbId);
-        } else {
-            LampaStorage.remove('manual_imdb_' + movieId);
-        }
-    }
-
-    function showManualImdbInput(movieId, currentImdbId, callback) {
-        var inputHtml = $('<div class="manual-imdb-id active">\
-            <div class="title">Введіть IMDb ID для цього фільму:</div>\
-            <input type="text" class="input" placeholder="наприклад: tt0111161" value="' + (currentImdbId || '') + '">\
-            <button class="save-btn">Зберегти</button>\
-        </div>');
+    function requestOMDB(id, render, anchor) {
+        var key = Lampa.Storage.get('omdb_api_key', '');
+        if (!key) return;
         
-        inputHtml.find('.save-btn').on('click', function() {
-            var value = inputHtml.find('.input').val().trim();
-            callback(value);
-            inputHtml.remove();
+        $.getJSON('https://www.omdbapi.com/?apikey=' + key + '&i=' + id, function(data) {
+            if (data && data.Response !== "False") {
+                if (data.Awards && data.Awards !== "N/A") {
+                    var oscarsMatch = data.Awards.match(/Won (\d+) Oscar/i);
+                    var winsMatch = data.Awards.match(/(\d+) win/i);
+                    
+                    if (oscarsMatch && parseInt(oscarsMatch[1]) > 0) {
+                        if ($('.rate--omdb-oscar', render).length === 0) {
+                            var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#feca57');
+                            anchor.before(oscarBlock);
+                        }
+                    }
+                    
+                    if (winsMatch && parseInt(winsMatch[1]) > 0) {
+                        if ($('.rate--omdb-awards', render).length === 0) {
+                            var awardBlock = createBlock('rate--omdb-awards', icons.award, winsMatch[1], '#fff');
+                            anchor.before(awardBlock);
+                        }
+                    }
+                }
+
+                // Додаємо рейтинги
+                if (data.Metascore && data.Metascore !== 'N/A') {
+                    addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
+                }
+                
+                var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
+                if (rt) {
+                    addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
+                }
+                
+                // Додаємо IMDB рейтинг
+                if (data.imdbRating && data.imdbRating !== 'N/A') {
+                    addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
+                }
+            }
         });
-        
-        $('body').append(inputHtml);
     }
 
     function updateRatings(e) {
         var render = e.object.activity.render();
         var movie = e.data.movie;
         var size = getRatingSize();
-
-        // Додаємо рейтинг Лампи (Cub)
-        var cubVal = getCubRating(e);
-        if (cubVal) {
-            var anchor = $('.rate--tmdb', render);
-            if (anchor.length === 0) anchor = $('.full-start__rates', render).find('div').first();
-            if (anchor.length > 0) {
-                addRatingBlock(anchor, 'rate--cub-custom', icons.cub, cubVal);
-            }
-        }
 
         $('.rate--tmdb', render).each(function() {
             var $this = $(this);
@@ -138,85 +136,18 @@
         if (anchor.length === 0) anchor = $('.full-start__rates', render).find('div').first();
         if (anchor.length === 0) return;
 
-        // Отримуємо IMDb ID з різних джерел
+        var cubVal = getCubRating(e);
+        if (cubVal) addRatingBlock(anchor, 'rate--cub-custom', icons.cub, cubVal);
+
         var imdb_id = movie.imdb_id || (movie.external_ids ? movie.external_ids.imdb_id : '');
-        var manualImdbId = getManualImdbId(movie.id);
-        
-        // Якщо є ручний ID, використовуємо його
-        if (manualImdbId && !imdb_id) {
-            imdb_id = manualImdbId;
-        }
-
-        var requestOMDB = function(id) {
-            var key = Lampa.Storage.get('omdb_api_key', '');
-            if (!key) return;
-            
-            $.getJSON('https://www.omdbapi.com/?apikey=' + key + '&i=' + id, function(data) {
-                if (data && data.Response !== "False") {
-                    // Додаємо IMDb рейтинг
-                    if (data.imdbRating && data.imdbRating !== 'N/A') {
-                        addRatingBlock(anchor, 'rate--omdb-imdb', icons.imdb, data.imdbRating);
-                    }
-
-                    // Додаємо нагороди
-                    if (data.Awards && data.Awards !== "N/A") {
-                        var oscarsMatch = data.Awards.match(/Won (\d+) Oscar/i);
-                        var winsMatch = data.Awards.match(/(\d+) win/i);
-                        
-                        if (oscarsMatch && parseInt(oscarsMatch[1]) > 0) {
-                            if ($('.rate--omdb-oscar', render).length === 0) {
-                                var oscarBlock = createBlock('rate--omdb-oscar', icons.oscar, oscarsMatch[1], '#feca57');
-                                anchor.before(oscarBlock);
-                            }
-                        }
-                        
-                        if (winsMatch && parseInt(winsMatch[1]) > 0) {
-                            if ($('.rate--omdb-awards', render).length === 0) {
-                                var awardBlock = createBlock('rate--omdb-awards', icons.award, winsMatch[1], '#fff');
-                                anchor.before(awardBlock);
-                            }
-                        }
-                    }
-
-                    // Додаємо Metascore
-                    if (data.Metascore && data.Metascore !== 'N/A') {
-                        addRatingBlock(anchor, 'rate--omdb-meta', icons.mc, (parseInt(data.Metascore) / 10).toFixed(1));
-                    }
-
-                    // Додаємо Rotten Tomatoes
-                    var rt = (data.Ratings || []).find(function(r) { return r.Source === 'Rotten Tomatoes'; });
-                    if (rt) {
-                        addRatingBlock(anchor, 'rate--omdb-rt', icons.rt, (parseInt(rt.Value) / 10).toFixed(1));
-                    }
-                }
-            });
-        };
 
         if (imdb_id) {
-            requestOMDB(imdb_id);
+            requestOMDB(imdb_id, render, anchor);
         } else if (movie.id) {
             var type = (e.object.method === 'tv' || movie.number_of_seasons) ? 'tv' : 'movie';
             if (window.Lampa && Lampa.Network && Lampa.TMDB) {
                 Lampa.Network.silent(Lampa.TMDB.api(type + '/' + movie.id + '/external_ids?api_key=' + Lampa.TMDB.key()), function (res) {
-                    if (res && res.imdb_id) {
-                        requestOMDB(res.imdb_id);
-                    } else {
-                        // Якщо ID не знайдено, показуємо кнопку для ручного введення
-                        var $infoBlock = $('<div class="full-start__rate" style="cursor: pointer; opacity: 0.7;" title="Натисніть щоб додати IMDb ID">➕ IMDb</div>');
-                        anchor.after($infoBlock);
-                        
-                        $infoBlock.one('click', function() {
-                            $(this).remove();
-                            showManualImdbInput(movie.id, '', function(newId) {
-                                if (newId) {
-                                    saveManualImdbId(movie.id, newId);
-                                    Lampa.Notice.show('ID збережено: ' + newId, 2000);
-                                    // Перезавантажуємо сторінку для оновлення рейтингів
-                                    setTimeout(function() { location.reload(); }, 1500);
-                                }
-                            });
-                        });
-                    }
+                    if (res && res.imdb_id) requestOMDB(res.imdb_id, render, anchor);
                 });
             }
         }
@@ -255,53 +186,27 @@
         Lampa.SettingsApi.addParam({
             component: COMPONENT_NAME,
             param: { name: "omdb_api_key_set", type: "static" },
-            field: { name: "API Key", description: "Натисніть для введення" },
+            field: { name: "OMDB API Key", description: "Введіть ваш API ключ від OMDB" },
             onRender: function (item) {
                 var currentKey = Lampa.Storage.get('omdb_api_key', '');
                 var valEl = $('<div class="omdb-api-val">' + (currentKey || 'Не встановлено') + '</div>');
                 item.find('.settings-param__descr').after(valEl);
+                
                 item.on('hover:enter', function() {
                     Lampa.Input.edit({
                         title: 'OMDB API Key',
                         value: Lampa.Storage.get('omdb_api_key', ''),
                         free: true,
-                        nosave: true
+                        nosave: true,
+                        help: 'Отримайте ключ на omdbapi.com/apikey.aspx'
                     }, function(newValue) {
-                        Lampa.Storage.set('omdb_api_key', newValue);
-                        valEl.text(newValue || 'Не встановлено');
-                    });
-                });
-            }
-        });
-
-        Lampa.SettingsApi.addParam({
-            component: COMPONENT_NAME,
-            param: { name: "omdb_manual_ids", type: "static" },
-            field: { name: "Керування IMDb ID", description: "Переглянути/очистити збережені ID" },
-            onRender: function (item) {
-                var count = 0;
-                // Підраховуємо кількість збережених ID
-                for (var key in Lampa.Storage.storage) {
-                    if (key.startsWith('manual_imdb_')) count++;
-                }
-                
-                var valEl = $('<div class="imdb-id-val">Збережено: ' + count + '</div>');
-                item.find('.settings-param__descr').after(valEl);
-                
-                item.on('hover:enter', function() {
-                    if (count > 0) {
-                        if (confirm('Очистити всі збережені IMDb ID?')) {
-                            for (var key in Lampa.Storage.storage) {
-                                if (key.startsWith('manual_imdb_')) {
-                                    Lampa.Storage.remove(key);
-                                }
-                            }
-                            valEl.text('Збережено: 0');
-                            Lampa.Notice.show('Всі ID очищено', 2000);
+                        if (newValue !== undefined) {
+                            Lampa.Storage.set('omdb_api_key', newValue);
+                            valEl.text(newValue || 'Не встановлено');
+                            
+                            Lampa.Notify.show('API ключ збережено');
                         }
-                    } else {
-                        Lampa.Notice.show('Немає збережених ID', 2000);
-                    }
+                    });
                 });
             }
         });
@@ -314,7 +219,7 @@
                 values: { '0.5em': 'XS', '0.8em': 'S', '1.1em': 'M', '1.5em': 'L', '2.0em': 'XL' },
                 default: '0.8em'
             },
-            field: { name: 'Розмір рейтингу' }
+            field: { name: 'Розмір рейтингу', description: 'Виберіть розмір для всіх рейтингів' }
         });
 
         Lampa.Listener.follow('full', function (e) {
