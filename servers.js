@@ -323,7 +323,7 @@
 
   function applySelection($list, base) {
     $list.find('.bat-torserver-modal__item').removeClass('is-selected');
-    \( list.find(`[data-base=" \){base}"]`).addClass('is-selected');
+    $list.find(`[data-base="${base}"]`).addClass('is-selected');
   }
 
   function updateCurrentLabel($modal, base) {
