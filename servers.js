@@ -315,7 +315,7 @@
       `<div class="bat-torserver-modal__item selector" data-base="${base}">
         <div class="bat-torserver-modal__left">
           <span class="bat-torserver-modal__dot"></span>
-          <span class="bat-flag">&nbsp;&nbsp;&nbsp;&nbsp;${flagHtml}&nbsp;&nbsp;&nbsp;&nbsp;</span>
+          <span class="bat-flag">&nbsp;&nbsp;&nbsp;${flagHtml}&nbsp;&nbsp;&nbsp;</span>
           <div class="bat-torserver-modal__name">${name}</div>
         </div>
         <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
@@ -352,7 +352,7 @@
             <div class="bat-torserver-modal__current-label">${Lampa.Lang.translate('bat_torserver_current')}</div>
             <div class="bat-torserver-modal__current-value"></div>
           </div>
-        </div>
+        </div>/n
         <div class="bat-torserver-modal__list"></div>
         <div class="bat-torserver-modal__actions">
           <div class="bat-torserver-modal__action selector">${Lampa.Lang.translate('bat_check_servers')}</div>
