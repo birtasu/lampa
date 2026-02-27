@@ -425,7 +425,7 @@
   console.log('[BAT-TS] Додаємо пункт динамічно');
 
   Lampa.SettingsApi.addParam({
-    component: 'parser',  // намагаємось саме сюди
+    component: 'torrserver',  // намагаємось саме сюди
     param: { name: 'bat_torserver_manage', type: 'button' },
     field: {
       name: Lampa.Lang.translate('bat_torserver'),
