@@ -356,8 +356,8 @@
         <div class="bat-torserver-modal__list"></div>
         <div class="bat-torserver-modal__actions">
           <div class="bat-torserver-modal__action selector">${Lampa.Lang.translate('bat_check_servers')}</div>
-        </div><br>
-      </div>`
+        </div>
+      </div><br><br>`
     );
 
     updateCurrentLabel($modal, selected);
