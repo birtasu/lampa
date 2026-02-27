@@ -417,45 +417,73 @@
     $btnCheck.trigger('hover:enter');
   }
 
-  function addSetting() {
-	console.log('[BAT-TS] Пробуємо додати пункт у компонент torrserver');
-	console.log('[BAT-TS] torrserver_use =', Lampa.Storage.field('torrserver_use'));
-	console.log('[BAT-TS] torrserver_url =', Lampa.Storage.get('torrserver_url'));
-    Lampa.SettingsApi.addParam({
-      component: 'parser',
-      param: { name: 'bat_torserver_manage', type: 'button' },
-      field: {
-        name: Lampa.Lang.translate('bat_torserver'),
-        description: Lampa.Lang.translate('bat_torserver_description'),
-        default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
-      },
-      onChange: openServerModal,
-      /*onRender: function ($item) {
-        setTimeout(function () {
-          // ховаємо якщо TorrServer вимкнений
-          if (Lampa.Storage.field('torrserver_use') !== true) {
-            $item.hide();
-          } else {
-            $item.show();
-          }
+  function addSettingDynamically() {
+  // Перевіряємо, чи вже додано (щоб не дублювати)
+  if (window.__bat_torserver_added__) return;
+  window.__bat_torserver_added__ = true;
 
-          updateSelectedLabelInSettings();
+  console.log('[BAT-TS] Додаємо пункт динамічно');
 
-          // намагаємось вставити після пункту "Використовувати TorServer"
-          var $ts_use = $('div[data-name="torrserver_use"]').first();
-          if ($ts_use.length) $item.insertAfter($ts_use);
-        }, 50);
-      }*/
-    });
+  Lampa.SettingsApi.addParam({
+    component: 'torrserver',  // намагаємось саме сюди
+    param: { name: 'bat_torserver_manage', type: 'button' },
+    field: {
+      name: Lampa.Lang.translate('bat_torserver'),
+      description: Lampa.Lang.translate('bat_torserver_description'),
+      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
+    },
+    onChange: openServerModal,
+    onRender: function ($item) {
+      // Тепер не ховаємо примусово — нехай видно завжди, якщо компонент існує
+      setTimeout(function () {
+        updateSelectedLabelInSettings();
+
+        // Спроба вставити після стандартного пункту "Використовувати TorServer" або "Адрес"
+        var $target = $('div[data-name="torrserver_use"], div[data-name="torrserver_address"], div[data-name="torrserver_url"]').first();
+        if ($target.length) {
+          $item.insertAfter($target);
+          console.log('[BAT-TS] Вставлено після існуючого пункту TorServer');
+        } else {
+          console.log('[BAT-TS] Не знайдено куди вставити — пункт просто в кінці розділу');
+        }
+
+        // Якщо розділ TorServer є — показуємо пункт
+        if (Lampa.Storage.field('torrserver_use') === true || Lampa.Storage.get('torrserver_url')) {
+          $item.show();
+        } else {
+          $item.hide();  // або закоментуй, щоб завжди було видно
+        }
+      }, 300);  // трохи більше затримки, бо компонент може з'являтися з запізненням
+    }
+  });
+}
+
+// Функція, яка чекає, поки з'явиться розділ TorServer
+function tryAddWhenReady() {
+  if (Lampa.Storage.field('torrserver_use') !== undefined) {
+    addSettingDynamically();
+  } else {
+    // Якщо ще undefined — пробуємо ще раз через 1-2 секунди
+    setTimeout(tryAddWhenReady, 1500);
   }
+}
 
-  function start() {
-    translate();
-    addSetting();
+function start() {
+  translate();
+  
+  // Застосовуємо вибраний сервер одразу
+  applySelectedServer(getSelectedBase());
 
-    // застосовуємо вибраний сервер при старті плагіна
-    applySelectedServer(getSelectedBase());
-  }
+  // Запускаємо спроби додати пункт
+  tryAddWhenReady();
+
+  // Додатково: слухаємо подію відкриття налаштувань
+  Lampa.Listener.follow('settings', function (e) {
+    if (e.type === 'open' || e.type === 'ready') {
+      tryAddWhenReady();
+    }
+  });
+}
 
   if (!window.plugin_bat_torserver_ready) {
     window.plugin_bat_torserver_ready = true;
