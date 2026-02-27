@@ -5,69 +5,58 @@
   function translate() {
     Lampa.Lang.add({
       bat_torserver: {
-        ru: 'Вибір TorServer',
         en: 'TorServer selection',
         uk: 'Вибір TorServer',
         zh: 'TorServer 选择'
       },
       bat_torserver_description: {
-        ru: 'Нажмите для выбора сервера',
         en: 'Click to select a server',
         uk: 'Натисніть для вибору сервера',
         zh: '点击选择服务器'
       },
       bat_torserver_current: {
-        ru: 'Текущий сервер:',
         en: 'Current server:',
         uk: 'Поточний сервер:',
         zh: '当前服务器：'
       },
       bat_torserver_none: {
-        ru: 'Не вибрано',
         en: 'Not selected',
         uk: 'Не вибрано',
         zh: '未选择'
       },
       bat_torserver_selected_label: {
-        ru: 'Вибрано:',
         en: 'Selected:',
         uk: 'Обрано:',
         zh: '已选择：'
       },
 
       bat_check_servers: {
-        ru: 'Перевірити доступність серверів',
         en: 'Check servers availability',
         uk: 'Перевірити доступність серверів',
         zh: '检查服务器可用性'
       },
       bat_check_done: {
-        ru: 'Перевірку завершено',
         en: 'Check completed',
         uk: 'Перевірку завершено',
         zh: '检查完成'
       },
 
       bat_status_checking: {
-        ru: 'Перевірка…',
         en: 'Checking…',
         uk: 'Перевірка…',
         zh: '检查中…'
       },
       bat_status_ok: {
-        ru: 'Доступний',
         en: 'Available',
         uk: 'Доступний',
         zh: '可用'
       },
       bat_status_bad: {
-        ru: 'Недоступний',
         en: 'Unavailable',
         uk: 'Недоступний',
         zh: '不可用'
       },
       bat_status_unknown: {
-        ru: 'Не перевірено',
         en: 'Not checked',
         uk: 'Не перевірено',
         zh: '未检查'
@@ -103,19 +92,19 @@
     },
     {
       base: 's5',
-      name: 'Bolota #1 (можливе блокування провайдером)',
+      name: 'Swamps #1 (need VPN)',
       url: '188.235.146.53:8090',
       flag: 'ru'
     },
     {
       base: 's6',
-      name: 'Bolota #2 (можливе блокування провайдером)',
+      name: 'Swamps #2 (need VPN)',
       url: '91.144.129.100:8090',
       flag: 'ru'
     },    
     {
       base: 's7',
-      name: 'Bolota #3 (можливе блокування провайдером)',
+      name: 'Swamps #3 (need VPN)',
       url: '95.139.92.66:8090',
       flag: 'ru'
     },
@@ -326,7 +315,7 @@
       `<div class="bat-torserver-modal__item selector" data-base="${base}">
         <div class="bat-torserver-modal__left">
           <span class="bat-torserver-modal__dot"></span>
-          <span class="bat-flag">&nbsp;&nbsp;${flagHtml}&nbsp;&nbsp;</span>
+          <span class="bat-flag">&nbsp;&nbsp;&nbsp;&nbsp;${flagHtml}&nbsp;&nbsp;&nbsp;&nbsp;</span>
           <div class="bat-torserver-modal__name">${name}</div>
         </div>
         <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
