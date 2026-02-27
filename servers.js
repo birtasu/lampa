@@ -451,7 +451,7 @@
         if (Lampa.Storage.field('torrserver_use') === true || Lampa.Storage.get('torrserver_url')) {
           $item.show();
         } else {
-          $item.hide();  // або закоментуй, щоб завжди було видно
+          //$item.hide();  // або закоментуй, щоб завжди було видно
         }
       }, 300);  // трохи більше затримки, бо компонент може з'являтися з запізненням
     }
