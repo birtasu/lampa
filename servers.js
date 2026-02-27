@@ -79,27 +79,45 @@
   var serversInfo = [
     {
       base: 's1',
-      name: 'Kyiv - Ukraine =1=',
+      name: 'Kyiv - Ukraine #1',
       url: '194.113.32.79:8090',
       flag: 'ua'   // Україна
     },
     {
       base: 's2',
-      name: 'Helsinki - Finland =1=',
+      name: 'Helsinki - Finland #1',
       url: '45.144.53.25:37940',
       flag: 'fi'   // Фінляндія
     },
     {
       base: 's3',
-      name: 'Helsinki - Finland =2=',
+      name: 'Helsinki - Finland #2',
       url: '45.144.53.25:37940',
       flag: 'fi'
     },
     {
       base: 's4',
-      name: 'Helsinki - Finland =3=',
+      name: 'Helsinki - Finland #3',
       url: '77.83.247.48:8090',
       flag: 'fi'
+    },
+    {
+      base: 's5',
+      name: 'Bolota #1 (можливе блокування провайдером)',
+      url: '188.235.146.53:8090',
+      flag: 'ru'
+    },
+    {
+      base: 's6',
+      name: 'Bolota #2 (можливе блокування провайдером)',
+      url: '91.144.129.100:8090',
+      flag: 'ru'
+    },    
+    {
+      base: 's7',
+      name: 'Bolota #3 (можливе блокування провайдером)',
+      url: '95.139.92.66:8090',
+      flag: 'ru'
     },
     // Додай нові, наприклад:
     // { base: 'de1', name: 'Frankfurt - Germany', url: '...', flag: 'de' },
