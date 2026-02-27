@@ -326,7 +326,7 @@
       `<div class="bat-torserver-modal__item selector" data-base="${base}">
         <div class="bat-torserver-modal__left">
           <span class="bat-torserver-modal__dot"></span>
-          <span class="bat-flag">&#32;${flagHtml}&#32;</span>
+          <span class="bat-flag">  ${flagHtml}  </span>
           <div class="bat-torserver-modal__name">${name}</div>
         </div>
         <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
