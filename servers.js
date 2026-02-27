@@ -418,6 +418,9 @@
   }
 
   function addSetting() {
+	console.log('[BAT-TS] Пробуємо додати пункт у компонент torrserver');
+	console.log('[BAT-TS] torrserver_use =', Lampa.Storage.field('torrserver_use'));
+	console.log('[BAT-TS] torrserver_url =', Lampa.Storage.get('torrserver_url'));
     Lampa.SettingsApi.addParam({
       component: 'parser',
       param: { name: 'bat_torserver_manage', type: 'button' },
@@ -427,7 +430,7 @@
         default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
       },
       onChange: openServerModal,
-      onRender: function ($item) {
+      /*onRender: function ($item) {
         setTimeout(function () {
           // ховаємо якщо TorrServer вимкнений
           if (Lampa.Storage.field('torrserver_use') !== true) {
@@ -442,7 +445,7 @@
           var $ts_use = $('div[data-name="torrserver_use"]').first();
           if ($ts_use.length) $item.insertAfter($ts_use);
         }, 50);
-      }
+      }*/
     });
   }
 
