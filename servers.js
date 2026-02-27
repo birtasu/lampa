@@ -1,4 +1,4 @@
-// IIFE
+// IIFE - самовикликаюча функція для ізоляції плагіна
 (function () {
   'use strict';
 
@@ -75,36 +75,34 @@
     });
   }
 
-  // ────────────────────────────────────────────────
-  // Список серверів з прапорами (emoji)
-  // ────────────────────────────────────────────────
+  // Список серверів з кодами країн (ISO alpha-2 в нижньому регістрі)
   var serversInfo = [
     {
       base: 's1',
       name: 'Kyiv - Ukraine =1=',
       url: '194.113.32.79:8090',
-      flag: '🇺🇦'   // Ukraine
+      flag: 'ua'   // Україна
     },
     {
       base: 's2',
       name: 'Helsinki - Finland =1=',
       url: '45.144.53.25:37940',
-      flag: '🇫🇮'   // Finland
+      flag: 'fi'   // Фінляндія
     },
     {
       base: 's3',
       name: 'Helsinki - Finland =2=',
       url: '45.144.53.25:37940',
-      flag: '🇫🇮'
+      flag: 'fi'
     },
     {
       base: 's4',
       name: 'Helsinki - Finland =3=',
       url: '77.83.247.48:8090',
-      flag: '🇫🇮'
+      flag: 'fi'
     },
-    // Приклад додавання нового:
-    // { base: 'de1', name: 'Frankfurt - Germany', url: 'de.example:8090', flag: '🇩🇪' },
+    // Додай нові, наприклад:
+    // { base: 'de1', name: 'Frankfurt - Germany', url: '...', flag: 'de' },
   ];
 
   var STORAGE_KEY = 'bat_torserver_selected';
@@ -263,11 +261,13 @@
   background: ${COLOR_UNKNOWN};
   box-shadow: 0 0 0.6em rgba(0,0,0,0.35);
 }
-.bat-flag {
-  font-size: 1.4em;          /* розмір прапора */
-  line-height: 1;
-  min-width: 1.6em;          /* фіксована ширина для вирівнювання */
-  text-align: center;
+.bat-flag img {
+  width: 20px;
+  height: 15px;
+  vertical-align: middle;
+  margin-right: 0.4em;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.3);
 }
 .bat-torserver-modal__name {
   font-size: 1em;
@@ -302,12 +302,13 @@
     document.head.appendChild(style);
   }
 
-  function buildServerItem(base, name, flag) {
+  function buildServerItem(base, name, flagCode) {
+    var flagHtml = flagCode ? `<img src="https://flagcdn.com/16x12/${flagCode}.png" alt="${flagCode.toUpperCase()}" />` : '';
     var $item = $(
       `<div class="bat-torserver-modal__item selector" data-base="${base}">
         <div class="bat-torserver-modal__left">
           <span class="bat-torserver-modal__dot"></span>
-          <span class="bat-flag">${flag || '🌍'}</span>
+          <span class="bat-flag">${flagHtml}</span>
           <div class="bat-torserver-modal__name">${name}</div>
         </div>
         <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
@@ -356,8 +357,8 @@
 
     var $list = $modal.find('.bat-torserver-modal__list');
 
-    // Пункт "Не вибрано" (без прапора або з нейтральним)
-    var $none = buildServerItem(NO_SERVER, Lampa.Lang.translate('bat_torserver_none'), '❌');
+    // Пункт "Не вибрано" — без прапора
+    var $none = buildServerItem(NO_SERVER, Lampa.Lang.translate('bat_torserver_none'), null);
     $none.on('hover:enter', function () {
       Lampa.Storage.set(STORAGE_KEY, NO_SERVER);
       applySelectedServer(NO_SERVER);
@@ -430,7 +431,7 @@
     console.log('[BAT-TS] Додаємо пункт з переміщенням на верх + жовтий колір');
 
     Lampa.SettingsApi.addParam({
-      component: 'server',  // залиш свій робочий варіант ('server' або 'torrents')
+      component: 'server',
       param: { name: 'bat_torserver_manage', type: 'button' },
       field: {
         name: Lampa.Lang.translate('bat_torserver'),
