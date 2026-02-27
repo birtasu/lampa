@@ -352,11 +352,11 @@
             <div class="bat-torserver-modal__current-label">${Lampa.Lang.translate('bat_torserver_current')}</div>
             <div class="bat-torserver-modal__current-value"></div>
           </div>
-        </div>/n
+        </div><br>
         <div class="bat-torserver-modal__list"></div>
         <div class="bat-torserver-modal__actions">
           <div class="bat-torserver-modal__action selector">${Lampa.Lang.translate('bat_check_servers')}</div>
-        </div>
+        </div><br>
       </div>`
     );
 
