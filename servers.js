@@ -424,7 +424,7 @@
   console.log('[BAT-TS] Додаємо пункт з переміщенням на верх + жовтий колір');
 
   Lampa.SettingsApi.addParam({
-    component: 'torrents',  // або 'server' — залиш те, що зараз працює у тебе
+    component: 'server',  // або 'server' — залиш те, що зараз працює у тебе
     param: { name: 'bat_torserver_manage', type: 'button' },
     field: {
       name: Lampa.Lang.translate('bat_torserver'),
