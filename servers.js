@@ -81,22 +81,22 @@
   var serversInfo = [
     {
       base: 's1',
-      name: 'Сервер 1',
+      name: 'Kyiv - Ukraine =1=',
       url: '194.113.32.79:8090'
     },
     {
       base: 's2',
-      name: 'Сервер 2',
+      name: 'Helsinki - Finland =1=',
       url: '45.144.53.25:37940'
     },
 	{
       base: 's3',
-      name: 'Сервер 3',
+      name: 'Helsinki - Finland =2=',
       url: '45.144.53.25:37940'
     },
 	{
       base: 's4',
-      name: 'Сервер 4',
+      name: 'Helsinki - Finland =3=',
       url: '77.83.247.48:8090'
     },
     // додайте сюди свої реальні сервери, наприклад:
