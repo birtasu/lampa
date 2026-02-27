@@ -76,32 +76,35 @@
   }
 
   // ────────────────────────────────────────────────
-  // Тут ви в майбутньому будете змінювати список серверів
+  // Список серверів з прапорами (emoji)
   // ────────────────────────────────────────────────
   var serversInfo = [
     {
       base: 's1',
       name: 'Kyiv - Ukraine =1=',
-      url: '194.113.32.79:8090'
+      url: '194.113.32.79:8090',
+      flag: '🇺🇦'   // Ukraine
     },
     {
       base: 's2',
       name: 'Helsinki - Finland =1=',
-      url: '45.144.53.25:37940'
+      url: '45.144.53.25:37940',
+      flag: '🇫🇮'   // Finland
     },
-	{
+    {
       base: 's3',
       name: 'Helsinki - Finland =2=',
-      url: '45.144.53.25:37940'
+      url: '45.144.53.25:37940',
+      flag: '🇫🇮'
     },
-	{
+    {
       base: 's4',
       name: 'Helsinki - Finland =3=',
-      url: '77.83.247.48:8090'
+      url: '77.83.247.48:8090',
+      flag: '🇫🇮'
     },
-    // додайте сюди свої реальні сервери, наприклад:
-    // { base: 'kyiv1', name: 'Київ #1', url: 'tors.kyiv.example:8090' },
-    // { base: 'fra1',  name: 'Франкфурт #1', url: 'de-fra-tor-01.online:8090' },
+    // Приклад додавання нового:
+    // { base: 'de1', name: 'Frankfurt - Germany', url: 'de.example:8090', flag: '🇩🇪' },
   ];
 
   var STORAGE_KEY = 'bat_torserver_selected';
@@ -113,7 +116,7 @@
 
   var cache = {
     data: {},
-    ttl: 40 * 1000, // 40 секунд
+    ttl: 40 * 1000,
     get: function(key) { 
       var v = this.data[key]; 
       return (v && Date.now() < v.expiresAt) ? v.value : null; 
@@ -146,9 +149,7 @@
       Lampa.Storage.remove('torrserver_address');
       return;
     }
-    // головне поле, яке використовує Lampa для зв'язку з TorrServer
     Lampa.Storage.set('torrserver_url', 'http://' + server.url);
-    // на всяк випадок дублюємо в старе поле (в деяких версіях)
     Lampa.Storage.set('torrserver_address', server.url);
   }
 
@@ -262,6 +263,12 @@
   background: ${COLOR_UNKNOWN};
   box-shadow: 0 0 0.6em rgba(0,0,0,0.35);
 }
+.bat-flag {
+  font-size: 1.4em;          /* розмір прапора */
+  line-height: 1;
+  min-width: 1.6em;          /* фіксована ширина для вирівнювання */
+  text-align: center;
+}
 .bat-torserver-modal__name {
   font-size: 1em;
   white-space: nowrap;
@@ -295,11 +302,12 @@
     document.head.appendChild(style);
   }
 
-  function buildServerItem(base, name) {
+  function buildServerItem(base, name, flag) {
     var $item = $(
       `<div class="bat-torserver-modal__item selector" data-base="${base}">
         <div class="bat-torserver-modal__left">
           <span class="bat-torserver-modal__dot"></span>
+          <span class="bat-flag">${flag || '🌍'}</span>
           <div class="bat-torserver-modal__name">${name}</div>
         </div>
         <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
@@ -315,7 +323,7 @@
 
   function applySelection($list, base) {
     $list.find('.bat-torserver-modal__item').removeClass('is-selected');
-    $list.find(`[data-base="${base}"]`).addClass('is-selected');
+    \( list.find(`[data-base=" \){base}"]`).addClass('is-selected');
   }
 
   function updateCurrentLabel($modal, base) {
@@ -348,8 +356,8 @@
 
     var $list = $modal.find('.bat-torserver-modal__list');
 
-    // Пункт "Не вибрано"
-    var $none = buildServerItem(NO_SERVER, Lampa.Lang.translate('bat_torserver_none'));
+    // Пункт "Не вибрано" (без прапора або з нейтральним)
+    var $none = buildServerItem(NO_SERVER, Lampa.Lang.translate('bat_torserver_none'), '❌');
     $none.on('hover:enter', function () {
       Lampa.Storage.set(STORAGE_KEY, NO_SERVER);
       applySelectedServer(NO_SERVER);
@@ -359,9 +367,9 @@
     });
     $list.append($none);
 
-    // Сервери
+    // Сервери з прапорами
     serversInfo.forEach(function(s) {
-      var $item = buildServerItem(s.base, s.name);
+      var $item = buildServerItem(s.base, s.name, s.flag);
       $item.on('hover:enter', function () {
         Lampa.Storage.set(STORAGE_KEY, s.base);
         applySelectedServer(s.base);
@@ -374,7 +382,6 @@
 
     applySelection($list, selected);
 
-    // Кнопка перевірки
     var $btnCheck = $modal.find('.bat-torserver-modal__action');
     $btnCheck.on('hover:enter', function () {
       $list.find('.bat-torserver-modal__item').each(function () {
@@ -413,92 +420,75 @@
       }
     });
 
-    // Автоматична перевірка при відкритті
     $btnCheck.trigger('hover:enter');
   }
 
   function addSettingDynamically() {
-  if (window.__bat_torserver_added__) return;
-  window.__bat_torserver_added__ = true;
+    if (window.__bat_torserver_added__) return;
+    window.__bat_torserver_added__ = true;
 
-  console.log('[BAT-TS] Додаємо пункт з переміщенням на верх + жовтий колір');
+    console.log('[BAT-TS] Додаємо пункт з переміщенням на верх + жовтий колір');
 
-  Lampa.SettingsApi.addParam({
-    component: 'server',  // або 'server' — залиш те, що зараз працює у тебе
-    param: { name: 'bat_torserver_manage', type: 'button' },
-    field: {
-      name: Lampa.Lang.translate('bat_torserver'),
-      description: Lampa.Lang.translate('bat_torserver_description'),
-      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
-    },
-    onChange: openServerModal,
-    onRender: function ($item) {
-      setTimeout(function () {
-        // 1. Оновлюємо текст "Обрано: ..."
-        updateSelectedLabelInSettings();
+    Lampa.SettingsApi.addParam({
+      component: 'server',  // залиш свій робочий варіант ('server' або 'torrents')
+      param: { name: 'bat_torserver_manage', type: 'button' },
+      field: {
+        name: Lampa.Lang.translate('bat_torserver'),
+        description: Lampa.Lang.translate('bat_torserver_description'),
+        default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
+      },
+      onChange: openServerModal,
+      onRender: function ($item) {
+        setTimeout(function () {
+          updateSelectedLabelInSettings();
 
-        // 2. Робимо назву пункту жовтою
-        $item.find('.settings-param__name')
-             .css('color', '#f3d900')           // жовтий колір (можна #ffeb3b для яскравішого)
-             .css('font-weight', 'bold');       // опціонально — жирний шрифт для виділення
+          $item.find('.settings-param__name')
+               .css('color', '#f3d900')
+               .css('font-weight', 'bold');
 
-        // 3. Переміщуємо пункт на самий верх або після першого ключового елемента
-        // Спочатку шукаємо типовий "головний" пункт розділу (зазвичай перший або з data-name="torrserv" / "torrents_use")
-        var $section = $item.closest('.settings__body, .settings-component'); // поточний блок налаштувань
+          var $section = $item.closest('.settings__body, .settings-component');
 
-        // Варіант А: після "Використовувати TorServer" (найкращий)
-        var $target = $section.find('[data-name="torrserv"], [data-name="torrserver_use"], [data-name="torrents_use"], [data-name*="use"]').first();
+          var $target = $section.find('[data-name="torrserv"], [data-name="torrserver_use"], [data-name="torrents_use"], [data-name*="use"]').first();
 
-        if ($target.length) {
-          $item.insertAfter($target);
-          console.log('[BAT-TS] Пункт переміщено після "Використовувати TorServer"');
-        } 
-        // Варіант Б: якщо не знайшли — на самий початок розділу
-        else {
-          var $firstChild = $section.children('.settings-param').first();
-          if ($firstChild.length) {
-            $item.insertBefore($firstChild);
-            console.log('[BAT-TS] Пункт переміщено на самий верх розділу');
+          if ($target.length) {
+            $item.insertAfter($target);
+            console.log('[BAT-TS] Пункт переміщено після "Використовувати TorServer"');
           } else {
-            $section.prepend($item);  // якщо зовсім нічого немає
-            console.log('[BAT-TS] Пункт додано на початок (prepend)');
+            var $firstChild = $section.children('.settings-param').first();
+            if ($firstChild.length) {
+              $item.insertBefore($firstChild);
+              console.log('[BAT-TS] Пункт переміщено на самий верх розділу');
+            } else {
+              $section.prepend($item);
+              console.log('[BAT-TS] Пункт додано на початок (prepend)');
+            }
           }
-        }
 
-        // Примусово показуємо (на всяк випадок)
-        $item.show();
-
-      }, 400);  // затримка, щоб DOM вже був сформований
-    }
-  });
-}
-
-// Функція, яка чекає, поки з'явиться розділ TorServer
-function tryAddWhenReady() {
-  if (Lampa.Storage.field('torrserver_use') !== undefined) {
-    addSettingDynamically();
-  } else {
-    // Якщо ще undefined — пробуємо ще раз через 1-2 секунди
-    setTimeout(tryAddWhenReady, 1500);
+          $item.show();
+        }, 400);
+      }
+    });
   }
-}
 
-function start() {
-  translate();
-  
-  // Застосовуємо вибраний сервер одразу
-  applySelectedServer(getSelectedBase());
-
-  // Запускаємо спроби додати пункт
-  tryAddWhenReady();
-
-  // Додатково: слухаємо подію відкриття налаштувань
-  Lampa.Listener.follow('settings', function (e) {
-    if (e.type === 'open' || e.type === 'ready') {
-      tryAddWhenReady();
+  function tryAddWhenReady() {
+    if (Lampa.Storage.field('torrserver_use') !== undefined) {
+      addSettingDynamically();
+    } else {
+      setTimeout(tryAddWhenReady, 1500);
     }
-  });
-}
+  }
+
+  function start() {
+    translate();
+    applySelectedServer(getSelectedBase());
+    tryAddWhenReady();
+
+    Lampa.Listener.follow('settings', function (e) {
+      if (e.type === 'open' || e.type === 'ready') {
+        tryAddWhenReady();
+      }
+    });
+  }
 
   if (!window.plugin_bat_torserver_ready) {
     window.plugin_bat_torserver_ready = true;
