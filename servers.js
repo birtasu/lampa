@@ -321,17 +321,17 @@
   }
 
   function buildServerItem(base, name, flagCode) {
-    var flagHtml = flagCode ? `<img src="https://flagcdn.com/16x12/\( {flagCode}.png" alt=" \){flagCode.toUpperCase()}" />` : '';
-var $item = $(
-  `<div class="bat-torserver-modal__item selector" data-base="${base}">
-    <div class="bat-torserver-modal__left">
-      <span class="bat-torserver-modal__dot"></span>
-      ${flagHtml ? '<span class="bat-flag">' + flagHtml + '</span>' : ''}
-      <div class="bat-torserver-modal__name">${name}</div>
-    </div>
-    <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
-  </div>`
-);
+    var flagHtml = flagCode ? `<img src="https://flagcdn.com/16x12/${flagCode}.png" alt="${flagCode.toUpperCase()}" />` : '';
+    var $item = $(
+      `<div class="bat-torserver-modal__item selector" data-base="${base}">
+        <div class="bat-torserver-modal__left">
+          <span class="bat-torserver-modal__dot"></span>
+          <span class="bat-flag">&nbsp;&nbsp;${flagHtml}&nbsp;&nbsp;</span>
+          <div class="bat-torserver-modal__name">${name}</div>
+        </div>
+        <div class="bat-torserver-modal__status">${Lampa.Lang.translate('bat_status_unknown')}</div>
+      </div>`
+    );
     return $item;
   }
 
