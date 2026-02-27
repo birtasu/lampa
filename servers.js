@@ -430,7 +430,7 @@
     field: {
       name: Lampa.Lang.translate('bat_torserver'),
       description: Lampa.Lang.translate('bat_torserver_description'),
-      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
+      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85;color: blue;'></div>"
     },
     onChange: openServerModal,
     onRender: function ($item) {
