@@ -418,42 +418,57 @@
   }
 
   function addSettingDynamically() {
-  // Перевіряємо, чи вже додано (щоб не дублювати)
   if (window.__bat_torserver_added__) return;
   window.__bat_torserver_added__ = true;
 
-  console.log('[BAT-TS] Додаємо пункт динамічно');
+  console.log('[BAT-TS] Додаємо пункт з переміщенням на верх + жовтий колір');
 
   Lampa.SettingsApi.addParam({
-    component: 'server',  // намагаємось саме сюди
+    component: 'torrents',  // або 'server' — залиш те, що зараз працює у тебе
     param: { name: 'bat_torserver_manage', type: 'button' },
     field: {
       name: Lampa.Lang.translate('bat_torserver'),
       description: Lampa.Lang.translate('bat_torserver_description'),
-      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85;color: blue;'></div>"
+      default: "<div class='bat-torserver-selected' style='margin-top:0.35em;opacity:0.85'></div>"
     },
     onChange: openServerModal,
     onRender: function ($item) {
-      // Тепер не ховаємо примусово — нехай видно завжди, якщо компонент існує
       setTimeout(function () {
+        // 1. Оновлюємо текст "Обрано: ..."
         updateSelectedLabelInSettings();
 
-        // Спроба вставити після стандартного пункту "Використовувати TorServer" або "Адрес"
-        var $target = $('div[data-name="torrserver_use"], div[data-name="torrserver_address"], div[data-name="torrserver_url"]').first();
+        // 2. Робимо назву пункту жовтою
+        $item.find('.settings-param__name')
+             .css('color', '#f3d900')           // жовтий колір (можна #ffeb3b для яскравішого)
+             .css('font-weight', 'bold');       // опціонально — жирний шрифт для виділення
+
+        // 3. Переміщуємо пункт на самий верх або після першого ключового елемента
+        // Спочатку шукаємо типовий "головний" пункт розділу (зазвичай перший або з data-name="torrserv" / "torrents_use")
+        var $section = $item.closest('.settings__body, .settings-component'); // поточний блок налаштувань
+
+        // Варіант А: після "Використовувати TorServer" (найкращий)
+        var $target = $section.find('[data-name="torrserv"], [data-name="torrserver_use"], [data-name="torrents_use"], [data-name*="use"]').first();
+
         if ($target.length) {
           $item.insertAfter($target);
-          console.log('[BAT-TS] Вставлено після існуючого пункту TorServer');
-        } else {
-          console.log('[BAT-TS] Не знайдено куди вставити — пункт просто в кінці розділу');
+          console.log('[BAT-TS] Пункт переміщено після "Використовувати TorServer"');
+        } 
+        // Варіант Б: якщо не знайшли — на самий початок розділу
+        else {
+          var $firstChild = $section.children('.settings-param').first();
+          if ($firstChild.length) {
+            $item.insertBefore($firstChild);
+            console.log('[BAT-TS] Пункт переміщено на самий верх розділу');
+          } else {
+            $section.prepend($item);  // якщо зовсім нічого немає
+            console.log('[BAT-TS] Пункт додано на початок (prepend)');
+          }
         }
 
-        // Якщо розділ TorServer є — показуємо пункт
-        if (Lampa.Storage.field('torrserver_use') === true || Lampa.Storage.get('torrserver_url')) {
-          $item.show();
-        } else {
-          $item.hide();  // або закоментуй, щоб завжди було видно
-        }
-      }, 300);  // трохи більше затримки, бо компонент може з'являтися з запізненням
+        // Примусово показуємо (на всяк випадок)
+        $item.show();
+
+      }, 400);  // затримка, щоб DOM вже був сформований
     }
   });
 }
