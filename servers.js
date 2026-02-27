@@ -419,7 +419,7 @@
 
   function addSetting() {
     Lampa.SettingsApi.addParam({
-      component: 'interface',
+      component: 'parser',
       param: { name: 'bat_torserver_manage', type: 'button' },
       field: {
         name: Lampa.Lang.translate('bat_torserver'),
