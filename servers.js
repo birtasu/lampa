@@ -72,38 +72,50 @@
       url: '194.113.32.79:8090',
       flag: 'ua'   // Україна
     },
-    {
+     {
       base: 's2',
+      name: 'Kyiv - Ukraine #2',
+      url: '93.171.245.226:80',
+      flag: 'ua'   // Україна
+    },
+    {
+      base: 's3',
       name: 'Helsinki - Finland #1',
       url: '45.144.53.25:37940',
       flag: 'fi'   // Фінляндія
     },
     {
-      base: 's3',
+      base: 's4',
       name: 'Helsinki - Finland #2',
       url: '45.144.53.25:37940',
       flag: 'fi'
     },
     {
-      base: 's4',
+      base: 's5',
       name: 'Helsinki - Finland #3',
       url: '77.83.247.48:8090',
       flag: 'fi'
     },
     {
-      base: 's5',
+      base: 's6',
+      name: 'Sweden #1',
+      url: 'ts.maxvol.pro',
+      flag: 'se'
+    },
+    {
+      base: 's7',
       name: 'Swamps #1 (need VPN)',
       url: '188.235.146.53:8090',
       flag: 'ru'
     },
     {
-      base: 's6',
+      base: 's8',
       name: 'Swamps #2 (need VPN)',
       url: '91.144.129.100:8090',
       flag: 'ru'
     },    
     {
-      base: 's7',
+      base: 's9',
       name: 'Swamps #3 (need VPN)',
       url: '95.139.92.66:8090',
       flag: 'ru'
