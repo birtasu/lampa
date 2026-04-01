@@ -126,6 +126,12 @@
       url: '95.139.92.66:8090',
       flag: 'ru'
     },
+    {
+      base: 's11',
+      name: 'noname',
+      url: 'http://193.105.164.138:8090',
+      flag: 'ua'
+    },
     // Додай нові, наприклад:
     // { base: 'de1', name: 'Frankfurt - Germany', url: '...', flag: 'de' },
   ];
